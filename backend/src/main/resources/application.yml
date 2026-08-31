@@ -1,0 +1,16 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: excel-reconciler
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+gemini:
+  api:
+    key: ${GEMINI_API_KEY:}
+    model: ${GEMINI_API_MODEL:gemini-3.5-flash-lite}
+    url: https://generativelanguage.googleapis.com/v1beta/models
