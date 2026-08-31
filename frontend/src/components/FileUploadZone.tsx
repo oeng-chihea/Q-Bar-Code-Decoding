@@ -39,7 +39,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   const handleExcelDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setExcelDragOver(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    if (e.dataTran sfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       if (file.name.match(/\.(xlsx|xls|csv)$/i)) {
         onSelectExcel(file);
@@ -69,8 +69,8 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   const totalImageSize = imageFiles.reduce((acc, file) => acc + file.size, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
         {/* 1. Excel File Upload Card */}
         <div
           onDragOver={(e) => {
@@ -80,13 +80,12 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           onDragLeave={() => setExcelDragOver(false)}
           onDrop={handleExcelDrop}
           onClick={() => !excelFile && excelInputRef.current?.click()}
-          className={`relative rounded-2xl border-2 border-dashed p-6 transition-all cursor-pointer flex flex-col justify-between min-h-[260px] ${
-            excelDragOver
-              ? 'border-emerald-500 bg-emerald-950/20'
+          className={`relative rounded-lg border-2 border-dashed p-5 transition-all cursor-pointer flex flex-col justify-between min-h-[250px] ${excelDragOver
+              ? 'border-[#34D399] bg-[#143827]/30'
               : excelFile
-              ? 'border-emerald-500/60 bg-slate-900/80 cursor-default'
-              : 'border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'
-          }`}
+                ? 'border-[#1E4D36] bg-[#1C1D22] cursor-default'
+                : 'border-[#2B2D35] bg-[#1C1D22] hover:border-[#3D404B] hover:bg-[#202127]'
+            }`}
         >
           <input
             ref={excelInputRef}
@@ -102,12 +101,12 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
 
           <div>
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
-                <FileSpreadsheet className="w-5 h-5" />
+              <div className="flex items-center gap-2 text-xs font-semibold text-[#34D399] uppercase tracking-wider">
+                <FileSpreadsheet className="w-4 h-4" />
                 Step 1: Excel Spreadsheet
               </div>
               {excelFile && (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36]">
                   <FileCheck className="w-3.5 h-3.5" /> Ready
                 </span>
               )}
@@ -115,27 +114,27 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
 
             {!excelFile ? (
               <div className="flex flex-col items-center justify-center py-6 text-center">
-                <div className="p-3 rounded-full bg-slate-800/80 text-emerald-400 mb-3">
-                  <UploadCloud className="w-7 h-7" />
+                <div className="p-3 rounded-md bg-[#24262E] text-[#34D399] mb-3 border border-[#2D2F36]">
+                  <UploadCloud className="w-6 h-6" />
                 </div>
-                <div className="text-sm font-medium text-slate-200 mb-1">
+                <div className="text-sm font-medium text-[#F3F4F6] mb-1">
                   Click to browse or drag &amp; drop Excel file
                 </div>
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-[#8E929E]">
                   Supports .xlsx, .xls containing "QR Barcode" column
                 </div>
               </div>
             ) : (
-              <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+              <div className="bg-[#16171B] border border-[#2B2D35] rounded-md p-3.5 flex items-center justify-between">
                 <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
-                    <FileSpreadsheet className="w-6 h-6" />
+                  <div className="p-2 rounded bg-[#143827] text-[#34D399] shrink-0 border border-[#1E4D36]">
+                    <FileSpreadsheet className="w-5 h-5" />
                   </div>
                   <div className="truncate">
-                    <div className="text-sm font-medium text-slate-100 truncate">
+                    <div className="text-sm font-medium text-[#F3F4F6] truncate">
                       {excelFile.name}
                     </div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-[#8E929E]">
                       {formatFileSize(excelFile.size)}
                     </div>
                   </div>
@@ -145,7 +144,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                     e.stopPropagation();
                     onSelectExcel(null);
                   }}
-                  className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                  className="p-1.5 rounded text-[#8E929E] hover:text-[#FB7185] hover:bg-[#461B21] transition cursor-pointer"
                   title="Remove file"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -154,7 +153,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             )}
           </div>
 
-          <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-4">
+          <div className="text-[11px] text-[#737887] flex items-center gap-1 mt-4">
             <AlertCircle className="w-3.5 h-3.5 shrink-0" />
             <span>Matching rows will be styled with red background.</span>
           </div>
@@ -169,13 +168,12 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           onDragLeave={() => setImageDragOver(false)}
           onDrop={handleImageDrop}
           onClick={() => imageInputRef.current?.click()}
-          className={`relative rounded-2xl border-2 border-dashed p-6 transition-all cursor-pointer flex flex-col justify-between min-h-[260px] ${
-            imageDragOver
-              ? 'border-indigo-500 bg-indigo-950/20'
+          className={`relative rounded-lg border-2 border-dashed p-5 transition-all cursor-pointer flex flex-col justify-between min-h-[250px] ${imageDragOver
+              ? 'border-[#A0E3E2] bg-[#12403F]/30'
               : imageFiles.length > 0
-              ? 'border-indigo-500/60 bg-slate-900/80 cursor-default'
-              : 'border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'
-          }`}
+                ? 'border-[#23585D] bg-[#1C1D22] cursor-default'
+                : 'border-[#2B2D35] bg-[#1C1D22] hover:border-[#3D404B] hover:bg-[#202127]'
+            }`}
         >
           <input
             ref={imageInputRef}
@@ -193,13 +191,13 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
 
           <div>
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-indigo-400">
-                <Images className="w-5 h-5" />
+              <div className="flex items-center gap-2 text-xs font-semibold text-[#A0E3E2] uppercase tracking-wider">
+                <Images className="w-4 h-4" />
                 Step 2: Barcode / QR Images
               </div>
               {imageFiles.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-[#18393C] text-[#A0E3E2] border border-[#23585D]">
                     {imageFiles.length} {imageFiles.length === 1 ? 'Image' : 'Images'} (
                     {formatFileSize(totalImageSize)})
                   </span>
@@ -208,7 +206,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                       e.stopPropagation();
                       onSelectImages([]);
                     }}
-                    className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                    className="p-1 rounded text-[#8E929E] hover:text-[#FB7185] hover:bg-[#461B21] transition cursor-pointer"
                     title="Clear all images"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -219,23 +217,23 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
 
             {imageFiles.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-6 text-center">
-                <div className="p-3 rounded-full bg-slate-800/80 text-indigo-400 mb-3">
-                  <UploadCloud className="w-7 h-7" />
+                <div className="p-3 rounded-md bg-[#24262E] text-[#A0E3E2] mb-3 border border-[#2D2F36]">
+                  <UploadCloud className="w-6 h-6" />
                 </div>
-                <div className="text-sm font-medium text-slate-200 mb-1">
+                <div className="text-sm font-medium text-[#F3F4F6] mb-1">
                   Select or drag &amp; drop multiple barcode/QR images
                 </div>
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-[#8E929E]">
                   Upload batch of 40+ photos (.png, .jpg, .webp)
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="grid grid-cols-6 gap-2 max-h-28 overflow-y-auto pr-1">
-                  {imageFiles.slice(0, 12).map((file, idx) => (
+                <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 max-h-32 overflow-y-auto pr-1">
+                  {imageFiles.slice(0, 16).map((file, idx) => (
                     <div
                       key={idx}
-                      className="relative group rounded-lg overflow-hidden border border-slate-800 bg-slate-950 aspect-square"
+                      className="relative group rounded overflow-hidden border border-[#2B2D35] bg-[#16171B] aspect-square"
                     >
                       <img
                         src={URL.createObjectURL(file)}
@@ -244,16 +242,16 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                       />
                     </div>
                   ))}
-                  {imageFiles.length > 12 && (
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/80 flex items-center justify-center text-xs font-semibold text-slate-400 aspect-square">
-                      +{imageFiles.length - 12}
+                  {imageFiles.length > 16 && (
+                    <div className="rounded border border-[#2B2D35] bg-[#202126] flex items-center justify-center text-xs font-semibold text-[#8E929E] aspect-square">
+                      +{imageFiles.length - 16}
                     </div>
                   )}
                 </div>
                 <button
                   type="button"
                   onClick={() => imageInputRef.current?.click()}
-                  className="w-full py-1.5 text-xs text-center font-medium text-indigo-400 hover:text-indigo-300 bg-indigo-950/30 rounded-lg border border-indigo-900/50 hover:bg-indigo-950/60 transition cursor-pointer"
+                  className="w-full py-1.5 text-xs text-center font-medium text-[#A0E3E2] hover:text-white bg-[#172D30] rounded border border-[#23585D] hover:bg-[#1E3B3E] transition cursor-pointer"
                 >
                   + Add More Images
                 </button>
@@ -261,18 +259,18 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             )}
           </div>
 
-          <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-4">
-            <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+          <div className="text-[11px] text-[#737887] flex items-center gap-1 mt-4">
+            <Sparkles className="w-3.5 h-3.5 shrink-0 text-[#A0E3E2]" />
             <span>Parallel workers decode images concurrently in real time.</span>
           </div>
         </div>
       </div>
 
       {/* Start Button & Progress */}
-      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="text-left text-xs text-slate-400">
+      <div className="bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="text-left text-xs text-[#8E929E]">
           <div>
-            <span className="font-semibold text-slate-200">Reconciliation Ready:</span>{' '}
+            <span className="font-semibold text-[#F3F4F6]">Reconciliation Ready:</span>{' '}
             {excelFile ? '1 Excel spreadsheet' : 'No Excel'} &bull;{' '}
             {imageFiles.length} {imageFiles.length === 1 ? 'image' : 'images'}
           </div>
@@ -281,18 +279,18 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         <button
           onClick={onStartReconcile}
           disabled={!excelFile || imageFiles.length === 0 || isProcessing}
-          className="w-full md:w-auto px-8 py-3.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-rose-600/20 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
+          className="w-full md:w-auto px-6 py-2.5 rounded-md font-semibold text-xs text-[#0E1726] bg-[#A0E3E2] hover:bg-[#8EE0DF] active:bg-[#7AD8D7] disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
         >
           {isProcessing ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin text-[#0E1726]" />
               <span>
                 Processing &amp; Reconciling... {uploadProgress > 0 && `(${uploadProgress}%)`}
               </span>
             </>
           ) : (
             <>
-              <Play className="w-4 h-4 fill-white" />
+              <Play className="w-3.5 h-3.5 fill-[#0E1726] text-[#0E1726]" />
               <span>Start Reconcile &amp; Highlight</span>
             </>
           )}

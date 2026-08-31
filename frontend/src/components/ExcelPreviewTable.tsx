@@ -41,25 +41,25 @@ export const ExcelPreviewTable = ({
   };
 
   return (
-    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 text-left space-y-4">
+    <div className="bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-5 text-left space-y-4">
       {/* Header Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#26272E] pb-4">
         <div className="flex items-center gap-2">
-          <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+          <FileSpreadsheet className="w-5 h-5 text-[#34D399]" />
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-wider m-0 flex items-center gap-2 flex-wrap">
               <span>Spreadsheet Preview</span>
               {activeSheetName && (
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium flex items-center gap-1">
+                <span className="text-xs px-2 py-0.5 rounded bg-[#1A2333] text-[#818CF8] border border-[#27354E] font-medium flex items-center gap-1">
                   <Layers className="w-3 h-3" />
                   Sheet: {activeSheetName}
                 </span>
               )}
-              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-normal">
+              <span className="text-xs px-2 py-0.5 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36] font-normal">
                 Target: {matchedColumnName}
               </span>
             </h3>
-            <p className="text-xs text-slate-400 m-0 mt-0.5">
+            <p className="text-xs text-[#8E929E] m-0 mt-0.5">
               Showing preview of first {previewRows.length} rows &bull; {matchedCount} matched rows highlighted in red
             </p>
           </div>
@@ -69,10 +69,10 @@ export const ExcelPreviewTable = ({
           {/* Toggle Filter */}
           <button
             onClick={() => setOnlyMatched(!onlyMatched)}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-md border text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
               onlyMatched
-                ? 'bg-rose-950/60 text-rose-300 border-rose-500'
-                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                ? 'bg-[#461B21] text-[#FB7185] border-[#5C2028]'
+                : 'bg-[#16171B] text-[#8E929E] border-[#2B2D35] hover:text-[#F3F4F6]'
             }`}
           >
             <Filter className="w-3 h-3" />
@@ -82,7 +82,7 @@ export const ExcelPreviewTable = ({
           {/* Download Action */}
           <button
             onClick={handleDownload}
-            className="px-4 py-1.5 rounded-lg border border-rose-500/50 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 transition shadow-md shadow-rose-600/20 flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-1.5 rounded-md border border-[#A0E3E2]/40 text-xs font-semibold text-[#0E1726] bg-[#A0E3E2] hover:bg-[#8EE0DF] transition shadow-sm flex items-center gap-1.5 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             Download .xlsx
@@ -91,14 +91,14 @@ export const ExcelPreviewTable = ({
       </div>
 
       {/* Spreadsheet Table */}
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
+      <div className="overflow-x-auto rounded-md border border-[#2B2D35] bg-[#16171B]">
         <table className="w-full text-xs text-left border-collapse">
           <thead>
-            <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-300">
-              <th className="py-3 px-3.5 font-semibold w-12 text-slate-500 border-r border-slate-800">
+            <tr className="bg-[#1C1D22] border-b border-[#2B2D35] text-[#8E929E]">
+              <th className="py-2.5 px-3.5 font-semibold w-12 text-[#737887] border-r border-[#2B2D35]">
                 #
               </th>
-              <th className="py-3 px-3.5 font-semibold w-24 border-r border-slate-800">
+              <th className="py-2.5 px-3.5 font-semibold w-24 border-r border-[#2B2D35]">
                 Status
               </th>
               {columns.map((col, idx) => {
@@ -106,14 +106,14 @@ export const ExcelPreviewTable = ({
                 return (
                   <th
                     key={idx}
-                    className={`py-3 px-4 font-semibold border-r border-slate-800 whitespace-nowrap ${
-                      isTarget ? 'text-rose-400 bg-rose-950/20' : ''
+                    className={`py-2.5 px-4 font-semibold border-r border-[#2B2D35] whitespace-nowrap ${
+                      isTarget ? 'text-[#A0E3E2] bg-[#162729]/50' : ''
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
                       <span>{col}</span>
                       {isTarget && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36]">
                           TARGET
                         </span>
                       )}
@@ -123,12 +123,12 @@ export const ExcelPreviewTable = ({
               })}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60">
+          <tbody className="divide-y divide-[#24252B]">
             {displayRows.length === 0 ? (
               <tr>
                 <td
                   colSpan={columns.length + 2}
-                  className="py-8 text-center text-slate-500 text-xs"
+                  className="py-8 text-center text-[#737887] text-xs"
                 >
                   No rows to display with current filter.
                 </td>
@@ -140,21 +140,21 @@ export const ExcelPreviewTable = ({
                     key={row.rowIndex}
                     className={`transition ${
                       row.matched
-                        ? 'bg-rose-950/40 text-rose-100 hover:bg-rose-950/60 font-medium'
-                        : 'hover:bg-slate-900/40 text-slate-300'
+                        ? 'bg-[#331418]/60 text-[#FEE2E2] hover:bg-[#40181D] font-medium'
+                        : 'hover:bg-[#1C1D22] text-[#D1D5DB]'
                     }`}
                   >
-                    <td className="py-2.5 px-3.5 text-slate-500 font-mono border-r border-slate-800/80">
+                    <td className="py-2 px-3.5 text-[#737887] font-mono border-r border-[#24252B]">
                       {row.rowIndex}
                     </td>
-                    <td className="py-2.5 px-3.5 border-r border-slate-800/80">
+                    <td className="py-2 px-3.5 border-r border-[#24252B]">
                       {row.matched ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white shadow-sm shadow-rose-500/50">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[#143827] text-[#34D399] border border-[#1E4D36]">
                           <CheckCircle2 className="w-3 h-3" />
                           MATCH (RED)
                         </span>
                       ) : (
-                        <span className="text-[10px] text-slate-500 font-normal">
+                        <span className="text-[10px] text-[#737887] font-normal">
                           &mdash;
                         </span>
                       )}
@@ -165,15 +165,15 @@ export const ExcelPreviewTable = ({
                       return (
                         <td
                           key={cIdx}
-                          className={`py-2.5 px-4 border-r border-slate-800/80 whitespace-nowrap font-mono ${
+                          className={`py-2.5 px-4 border-r border-[#24252B] whitespace-nowrap font-mono ${
                             isTarget && row.matched
-                              ? 'text-rose-300 font-bold bg-rose-500/20'
+                              ? 'text-[#FCA5A5] font-bold bg-[#541920]/40'
                               : isTarget
-                              ? 'text-slate-200'
+                              ? 'text-[#F3F4F6]'
                               : ''
                           }`}
                         >
-                          {val || <span className="text-slate-600 italic">null</span>}
+                          {val || <span className="text-[#5A5E6B] italic font-sans">null</span>}
                         </td>
                       );
                     })}
@@ -186,10 +186,11 @@ export const ExcelPreviewTable = ({
       </div>
 
       {totalRows > previewRows.length && (
-        <div className="text-[11px] text-slate-500 text-center pt-2">
+        <div className="text-[11px] text-[#737887] text-center pt-2">
           Previewing first {previewRows.length} of {totalRows} total rows. The full modified file with all {matchedCount} highlighted rows is ready in the downloaded Excel file.
         </div>
       )}
     </div>
   );
 };
+
