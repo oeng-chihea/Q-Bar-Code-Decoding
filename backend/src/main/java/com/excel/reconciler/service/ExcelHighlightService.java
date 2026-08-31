@@ -112,6 +112,7 @@ public class ExcelHighlightService {
         Sheet primarySheet = null;
         SheetHeaderInfo primaryHeaderInfo = null;
         List<ExcelRowPreview> primaryPreviewRows = new ArrayList<>();
+        int bestSheetOverallScore = -1;
 
         // Process all sheets in the workbook
         for (int s = 0; s < workbook.getNumberOfSheets(); s++) {
@@ -134,7 +135,7 @@ public class ExcelHighlightService {
                 String matchedValInRow = "";
                 List<Cell> cellsToHighlight = new ArrayList<>();
 
-                // 1. Check all cells in the row for matches (to catch Barcode in Col 4 or SKU in Col 3)
+                // Check all cells in row strictly for barcode matches
                 for (int c = 0; c < row.getLastCellNum(); c++) {
                     Cell cell = row.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
                     String val = formatter.formatCellValue(cell).trim();
@@ -157,7 +158,6 @@ public class ExcelHighlightService {
                             cCell.setCellStyle(highlightStyle);
                         }
                     } else {
-                        // Highlight all matched barcode/SKU cells in this row
                         for (Cell matchedCell : cellsToHighlight) {
                             matchedCell.setCellStyle(highlightStyle);
                         }
@@ -167,7 +167,8 @@ public class ExcelHighlightService {
                 Cell targetCell = row.getCell(headerInfo.targetColIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
                 String targetVal = formatter.formatCellValue(targetCell).trim();
 
-                if (currentSheetPreviews.size() < 100) {
+                // Capture preview rows
+                if (currentSheetPreviews.size() < 500) {
                     Map<String, String> cellData = new LinkedHashMap<>();
                     for (int c = 0; c < headerInfo.headers.size(); c++) {
                         Cell cCell = row.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
@@ -182,11 +183,14 @@ public class ExcelHighlightService {
             totalDataRowsAcrossSheets += sheetDataRows;
             totalMatchedRowsAcrossSheets += sheetMatchedCount;
 
-            // Pick the sheet with matches or highest catalog score as the primary preview sheet
-            if (primarySheet == null || sheetMatchedCount > 0 || (primaryHeaderInfo != null && headerInfo.score > primaryHeaderInfo.score)) {
+            // Prioritize the sheet that has the MOST MATCHED ITEMS for the UI preview
+            int currentSheetScore = (sheetMatchedCount * 1000) + (sheetDataRows * 10) + headerInfo.score;
+
+            if (primarySheet == null || currentSheetScore > bestSheetOverallScore) {
                 primarySheet = sheet;
                 primaryHeaderInfo = headerInfo;
                 primaryPreviewRows = currentSheetPreviews;
+                bestSheetOverallScore = currentSheetScore;
             }
         }
 
@@ -219,7 +223,7 @@ public class ExcelHighlightService {
         String normSearch = normalize(searchColName);
 
         SheetHeaderInfo bestInfo = null;
-        int maxScanRows = Math.min(30, sheet.getLastRowNum() + 1);
+        int maxScanRows = Math.min(20, sheet.getLastRowNum() + 1);
 
         for (int r = 0; r < maxScanRows; r++) {
             Row row = sheet.getRow(r);
@@ -229,54 +233,84 @@ public class ExcelHighlightService {
             int targetColIdx = -1;
             String resolvedCol = null;
             int score = 0;
-            int validHeaderCount = 0;
+            int textHeaderCount = 0;
+            boolean hasNumericCell = false;
 
             for (int c = 0; c < row.getLastCellNum(); c++) {
                 Cell cell = row.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
                 String text = formatter.formatCellValue(cell).trim();
 
-                // Skip formula definition text from being mistaken as a column header
+                // Skip formula definition text
                 if (cell.getCellType() == CellType.FORMULA || text.startsWith("=") || text.contains("(") || text.contains("!")) {
                     headers.add("Column " + (c + 1));
                     continue;
                 }
 
+                // If cell is a data number (e.g. 12, $49.99, or pure numeric barcode), this row is likely a data row, not a header!
+                if (text.matches("^\\$?\\d+(\\.\\d+)?$") || text.matches("^\\d{8,18}$")) {
+                    hasNumericCell = true;
+                }
+
                 headers.add(text.isEmpty() ? "Column " + (c + 1) : text);
 
-                if (!text.isEmpty() && text.length() < 50) {
-                    validHeaderCount++;
+                if (!text.isEmpty() && text.length() < 40 && !text.matches("^\\d+$")) {
+                    textHeaderCount++;
                     String normText = normalize(text);
 
                     // Exact or strong column match
                     if (text.equalsIgnoreCase(searchColName)) {
                         targetColIdx = c;
                         resolvedCol = text;
+                        score += 300;
+                    } else if (normText.contains("barcode") || normText.contains("qrcode") || normText.contains("upc") || normText.contains("ean") || normText.contains(normSearch)) {
+                        if (targetColIdx == -1) {
+                            targetColIdx = c;
+                            resolvedCol = text;
+                        }
                         score += 200;
-                    } else if (normText.contains("barcode") || normText.contains("qrcode") || normText.contains("code") || normText.contains(normSearch)) {
+                    } else if (normText.contains("itemid") || normText.contains("sku") || normText.contains("productid") || normText.contains("itemcode")) {
                         if (targetColIdx == -1) {
                             targetColIdx = c;
                             resolvedCol = text;
                         }
-                        score += 100;
-                    } else if (normText.contains("sku") || normText.contains("itemid") || normText.contains("productid") || normText.contains("model")) {
-                        if (targetColIdx == -1) {
-                            targetColIdx = c;
-                            resolvedCol = text;
-                        }
+                        score += 80;
+                    } else if (normText.contains("no") || normText.contains("itemname") || normText.contains("product") || normText.contains("category") || normText.contains("quantity") || normText.contains("price") || normText.contains("cost")) {
                         score += 40;
-                    } else if (normText.contains("category") || normText.contains("name") || normText.contains("description") || normText.contains("price")) {
-                        score += 15;
                     }
                 }
             }
 
-            if (targetColIdx != -1 && validHeaderCount >= 2) {
+            // A valid table header must be text labels (not data numbers) and have multiple column titles
+            if (!hasNumericCell && textHeaderCount >= 3) {
+                if (targetColIdx == -1) {
+                    // Check if next row has barcodes in any column
+                    if (r + 1 <= sheet.getLastRowNum()) {
+                        Row nextRow = sheet.getRow(r + 1);
+                        if (nextRow != null) {
+                            for (int c = 0; c < nextRow.getLastCellNum(); c++) {
+                                Cell cCell = nextRow.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+                                String val = formatter.formatCellValue(cCell).trim();
+                                if (val.matches("^\\d{8,18}$")) {
+                                    targetColIdx = c;
+                                    resolvedCol = headers.size() > c ? headers.get(c) : "Barcode";
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (targetColIdx == -1) {
+                    targetColIdx = 0;
+                    resolvedCol = headers.get(0);
+                }
+
                 SheetHeaderInfo info = new SheetHeaderInfo();
                 info.headerRowNum = r;
                 info.targetColIndex = targetColIdx;
                 info.resolvedColName = resolvedCol;
                 info.headers = headers;
-                info.score = score + validHeaderCount;
+                info.score = score + (textHeaderCount * 20);
 
                 if (bestInfo == null || info.score > bestInfo.score) {
                     bestInfo = info;

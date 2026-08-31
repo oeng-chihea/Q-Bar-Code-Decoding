@@ -1,5 +1,6 @@
 package com.excel.reconciler.service;
 
+import com.excel.reconciler.util.BarcodeValidator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -56,12 +57,12 @@ public class GeminiVisionService {
                 mimeType = "image/jpeg";
             }
 
-            String prompt = "You are an expert warehouse barcode scanner. Extract ALL barcodes, QR codes, and product identifiers from this image: "
-                    + "1. 1D Barcode digits (look directly below the barcode lines, e.g. '840192837465', '719283049581') "
-                    + "2. QR Code content "
-                    + "3. SKU / Model numbers (e.g. 'TL-9042-X', 'HP-5510-B') "
-                    + "Return strictly a JSON array of strings containing all numbers and SKU codes found, e.g. [\"840192837465\", \"TL-9042-X\"]. "
-                    + "If none, return [].";
+            String prompt = "You are an optical barcode and QR code reader. "
+                    + "Scan this image and extract ONLY the exact Barcode and QR code numbers (e.g. '840192837401', '719283049581'). "
+                    + "For each barcode or QR code visible (whether 1 product or a multi-barcode sheet): "
+                    + "Extract the full numeric barcode digits. Do NOT extract Item IDs, product names, categories, or descriptions. "
+                    + "Return strictly a JSON array of strings containing only the barcode numbers found, for example: [\"840192837401\", \"840192837418\"]. "
+                    + "If no barcodes are found, return [].";
 
             Map<String, Object> inlineData = Map.of(
                     "mime_type", mimeType,
@@ -75,11 +76,22 @@ public class GeminiVisionService {
                     "parts", List.of(textPart, imagePart)
             );
 
+            // Strict JSON Schema for pure string array of barcode numbers
+            Map<String, Object> schema = Map.of(
+                    "type", "ARRAY",
+                    "description", "List of detected barcode or QR code numbers",
+                    "items", Map.of(
+                            "type", "STRING",
+                            "description", "Numeric barcode digits (e.g. 840192837401) or QR code content"
+                    )
+            );
+
             Map<String, Object> requestBody = Map.of(
                     "contents", List.of(contentObj),
                     "generationConfig", Map.of(
-                            "temperature", 0.1,
-                            "responseMimeType", "application/json"
+                            "temperature", 0.0,
+                            "responseMimeType", "application/json",
+                            "responseSchema", schema
                     )
             );
 
@@ -104,9 +116,9 @@ public class GeminiVisionService {
                         JsonNode textNode = candidates.get(0).path("content").path("parts").get(0).path("text");
                         if (!textNode.isMissingNode()) {
                             String rawText = textNode.asText().trim();
-                            List<String> parsed = parseJsonArray(rawText);
+                            List<String> parsed = parseBarcodeNumbers(rawText);
                             if (!parsed.isEmpty()) {
-                                log.info("Gemini model {} successfully extracted barcodes: {}", model, parsed);
+                                log.info("Gemini {} successfully extracted {} barcode numbers: {}", model, parsed.size(), parsed);
                                 return parsed;
                             }
                         }
@@ -122,8 +134,8 @@ public class GeminiVisionService {
         return Collections.emptyList();
     }
 
-    private List<String> parseJsonArray(String rawText) {
-        List<String> results = new ArrayList<>();
+    private List<String> parseBarcodeNumbers(String rawText) {
+        Set<String> validatedCodes = new LinkedHashSet<>();
         try {
             String cleanJson = rawText;
             if (cleanJson.startsWith("```")) {
@@ -133,25 +145,29 @@ public class GeminiVisionService {
                     cleanJson = cleanJson.substring(firstNewline + 1, lastBackticks).trim();
                 }
             }
+
             JsonNode node = objectMapper.readTree(cleanJson);
             if (node.isArray()) {
                 for (JsonNode item : node) {
-                    if (item.isTextual() && !item.asText().trim().isEmpty()) {
-                        results.add(item.asText().trim());
-                    } else if (item.isNumber()) {
-                        results.add(item.asText());
+                    String val = item.isTextual() ? item.asText().trim() : item.isObject() ? item.path("barcode").asText("").trim() : item.asText().trim();
+                    if (!val.isEmpty()) {
+                        String clean = BarcodeValidator.cleanCode(val);
+                        if (clean.matches("^\\d{4,30}$") || BarcodeValidator.isValidBarcode(clean)) {
+                            validatedCodes.add(clean);
+                        }
                     }
                 }
             }
         } catch (Exception e) {
+            log.debug("Barcode parse fallback: {}", e.getMessage());
             String[] tokens = rawText.replaceAll("[\\[\\]\"'{}]", "").split("[,\\n]+");
             for (String t : tokens) {
-                String trimmed = t.trim();
-                if (!trimmed.isEmpty()) {
-                    results.add(trimmed);
+                String clean = BarcodeValidator.cleanCode(t);
+                if (clean.matches("^\\d{4,30}$")) {
+                    validatedCodes.add(clean);
                 }
             }
         }
-        return results;
+        return new ArrayList<>(validatedCodes);
     }
 }

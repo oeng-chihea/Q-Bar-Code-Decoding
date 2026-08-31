@@ -37,7 +37,7 @@ public class ReconciliationService {
         // 1. Decode all images in parallel
         List<BarcodeResult> scanResults = barcodeDecoderService.decodeBatch(imageFiles, geminiApiKey);
 
-        // 2. Aggregate all successfully decoded codes
+        // 2. Aggregate all barcodes and SKUs across all uploaded images/sheets
         Set<String> allDecodedCodes = new LinkedHashSet<>();
         int decodedImagesCount = 0;
 
