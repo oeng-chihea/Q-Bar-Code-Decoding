@@ -195,8 +195,7 @@ Set your Google AI Studio API key in `.env`:
 
 ```env
 # Google AI Studio API Key for multimodal barcode/SKU detection
-# Get your free key at: https://aistudio.google.com/app/apikey
-GEMINI_API_KEY=AIzaSy...your-key-here...
+# Get your free key at: https://aistudio.google.com/app/apikey.
 
 # Default Gemini Vision Model
 GEMINI_API_MODEL=gemini-3.5-flash-lite
