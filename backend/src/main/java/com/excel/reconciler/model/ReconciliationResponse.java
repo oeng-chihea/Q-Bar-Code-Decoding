@@ -10,6 +10,8 @@ public class ReconciliationResponse {
     private int matchedRowsCount;
     private int unmatchedImagesCount;
     private String matchedColumnName;
+    private double matchedColumnConfidence;
+    private List<Integer> identifierColumnIndexes = List.of();
     private String activeSheetName;
     private List<String> columns;
     private List<BarcodeResult> scanResults;
@@ -19,6 +21,7 @@ public class ReconciliationResponse {
     private List<ExcelRowPreview> previewRows;
     private String highlightedExcelBase64;
     private String downloadFileName;
+    private String excelSourceType;
     private long executionTimeMs;
 
     public ReconciliationResponse() {
@@ -70,6 +73,22 @@ public class ReconciliationResponse {
 
     public void setMatchedColumnName(String matchedColumnName) {
         this.matchedColumnName = matchedColumnName;
+    }
+
+    public double getMatchedColumnConfidence() {
+        return matchedColumnConfidence;
+    }
+
+    public void setMatchedColumnConfidence(double matchedColumnConfidence) {
+        this.matchedColumnConfidence = matchedColumnConfidence;
+    }
+
+    public List<Integer> getIdentifierColumnIndexes() {
+        return identifierColumnIndexes;
+    }
+
+    public void setIdentifierColumnIndexes(List<Integer> identifierColumnIndexes) {
+        this.identifierColumnIndexes = identifierColumnIndexes;
     }
 
     public String getActiveSheetName() {
@@ -142,6 +161,14 @@ public class ReconciliationResponse {
 
     public void setDownloadFileName(String downloadFileName) {
         this.downloadFileName = downloadFileName;
+    }
+
+    public String getExcelSourceType() {
+        return excelSourceType;
+    }
+
+    public void setExcelSourceType(String excelSourceType) {
+        this.excelSourceType = excelSourceType;
     }
 
     public long getExecutionTimeMs() {

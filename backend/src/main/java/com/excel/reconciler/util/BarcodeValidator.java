@@ -1,21 +1,52 @@
 package com.excel.reconciler.util;
 
 import java.util.Locale;
+import java.util.Set;
 
 /**
- * High-precision GS1 and standard Barcode Checksum Validator.
- * Implements Modulo-10 check digit verification for UPC-A, EAN-13, EAN-8, and UPC-E.
+ * High-precision GS1 Barcode and SKU Validator.
+ * Supports UPC-A, EAN-13, EAN-8, Code-128, Code-39, QR Codes, and Inventory SKU codes.
  */
 public final class BarcodeValidator {
+
+    private static final Set<String> STOP_WORDS = Set.of(
+            "item", "sku", "barcode", "qrcode", "upc", "ean", "name", "product",
+            "category", "price", "cost", "qty", "quantity", "shipto", "ship",
+            "null", "none", "true", "false", "undefined"
+    );
 
     private BarcodeValidator() {}
 
     /**
-     * Normalizes a barcode string by removing spaces, hyphens, and non-alphanumeric noise.
+     * Normalizes a code string by removing spaces, hyphens, and non-alphanumeric noise.
      */
     public static String cleanCode(String raw) {
         if (raw == null) return "";
         return raw.trim().replaceAll("[\\s_\\-/:()!']+", "");
+    }
+
+    /**
+     * Validates if a code string is a plausible barcode, QR code content, or SKU identifier.
+     */
+    public static boolean isValidCode(String raw) {
+        if (raw == null) return false;
+        String trimmed = raw.trim();
+        if (trimmed.length() < 2 || trimmed.length() > 50) {
+            return false;
+        }
+
+        String lowerClean = cleanCode(trimmed).toLowerCase(Locale.ROOT);
+        if (STOP_WORDS.contains(lowerClean)) {
+            return false;
+        }
+
+        // Pure digits: barcode number
+        if (trimmed.matches("^\\d+$")) {
+            return trimmed.length() >= 4 && trimmed.length() <= 32;
+        }
+
+        // Alphanumeric SKU / Item ID (e.g. OUT-110, ELE-034, PET-020, PWR-099, HTL_012)
+        return trimmed.matches("^[A-Za-z0-9_\\-\\./#]+$");
     }
 
     /**
@@ -37,17 +68,14 @@ public final class BarcodeValidator {
             } else if (clean.length() == 8) {
                 return validateEan8CheckDigit(clean);
             }
-            // Other numeric barcodes (e.g. Code 128, ITF, Code 39 numbers)
             return true;
         }
 
-        // Alphanumeric code (SKU, Code 39, QR alphanumeric content)
-        return clean.matches("^[A-Za-z0-9\\-]+$");
+        return clean.matches("^[A-Za-z0-9]+$");
     }
 
     /**
      * GS1 Modulo-10 Check Digit for UPC-A (12 digits).
-     * Rule: (10 - ((sum of odd position digits * 3) + sum of even position digits) % 10) % 10
      */
     public static boolean validateUpcACheckDigit(String upc) {
         if (upc == null || upc.length() != 12 || !upc.matches("^\\d{12}$")) {
@@ -58,9 +86,9 @@ public final class BarcodeValidator {
         for (int i = 0; i < 11; i++) {
             int digit = upc.charAt(i) - '0';
             if (i % 2 == 0) {
-                sumOdd += digit; // Positions 1, 3, 5, 7, 9, 11 (0-indexed even)
+                sumOdd += digit;
             } else {
-                sumEven += digit; // Positions 2, 4, 6, 8, 10 (0-indexed odd)
+                sumEven += digit;
             }
         }
         int total = (sumOdd * 3) + sumEven;

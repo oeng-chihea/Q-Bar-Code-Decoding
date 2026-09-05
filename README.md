@@ -1,6 +1,6 @@
-# 📦 Excel Barcode & QR Code Reconciler with Gemini AI
+# 📦 Excel Barcode & QR Code Reconciler with Local Ollama AI
 
-An enterprise-grade, full-stack web application designed to reconcile batches of warehouse barcode and QR code product photos against multi-sheet Excel inventory spreadsheets. Matched items are highlighted in **RED** and exported back into a modified `.xlsx` workbook with live preview and analytics.
+An enterprise-grade, full-stack web application designed to reconcile batches of warehouse barcode and QR code product photos against multi-sheet Excel inventory spreadsheets. Matched items are highlighted in **RED** and exported back into a modified `.xlsx` workbook with live preview, analytics, and a Khmer-only UI.
 
 ---
 
@@ -20,7 +20,7 @@ graph TD
 
     %% PRESENTATION TIER
     subgraph ClientLayer ["1️⃣ Presentation Tier (React 19 + Vite)"]
-        UI_Upload["📤 Dual File Dropzone\n• Excel File (.xlsx)\n• Barcode Image Batch (Single or Multi-Label)"]:::client
+        UI_Upload["📤 Dual Dropzone\n• Step 1: Excel File or Table Image (.xlsx, .xls, .csv, .png, .jpg, .jpeg, .webp)\n• Step 2: Barcode / QR Image Batch"]:::client
         UI_Preview["📊 Live Spreadsheet Preview\n(Interactive Red Row Highlighting)"]:::client
         UI_Cards["🏷️ Matched Barcodes Gallery\n(Numeric Barcode Codes)"]:::client
         UI_Download["📥 1-Click .xlsx Downloader"]:::client
@@ -34,7 +34,7 @@ graph TD
 
     %% LAYER 1: STRICT BARCODE AI OCR
     subgraph Layer1 ["3️⃣ Layer 1: Strict Optical Barcode Extraction"]
-        Gemini_AI["🧠 Google Gemini 3.5 / 3.1 Vision\n• Strict response_schema: Array of Barcode Numbers\n• Pure Numeric 1D Barcodes & QR Codes\n• Multi-Item Sheet Scanning (Items 1 to 20)\n• 3D Angle & Perspective Tolerant"]:::layer1
+        Ollama_AI["🧠 Local Ollama Qwen3-VL 8B Vision\n• JSON-constrained barcode fallback\n• Pure Numeric 1D Barcodes & QR Codes\n• Multi-Item Sheet Scanning"]:::layer1
     end
 
     %% LAYER 2: MATHEMATICAL GS1 VALIDATOR
@@ -50,9 +50,9 @@ graph TD
     %% Data Flow
     UI_Upload -->|1. Multipart Upload| API_Ctrl
     API_Ctrl --> API_Orch
-    API_Orch -->|2. Parallel Image Dispatch| Gemini_AI
-    Gemini_AI <-->|HTTPS REST + Schema| CloudAPI["☁️ Google AI Studio API"]:::layer1
-    Gemini_AI -->|3. Extracted Barcode Numbers| GS1_Validator
+    API_Orch -->|2. ZXing first; Ollama only on misses| Ollama_AI
+    Ollama_AI <-->|Local REST + JSON Schema| LocalAI["💻 Ollama localhost:11434"]:::layer1
+    Ollama_AI -->|3. Extracted Barcode Numbers| GS1_Validator
     GS1_Validator -->|4. Validated Checksum Barcodes| API_Orch
     API_Orch -->|5. Match Barcodes in Excel| Excel_Engine
     Excel_Engine -->|6. In-Memory Modified Workbook| API_Orch
@@ -92,7 +92,7 @@ graph TD
 
 ```
 Excel-Decoding-project/
-├── .env                       # Root environment configuration (Gemini API Key)
+├── .env                       # Root environment configuration (Ollama model)
 ├── backend/                   # Spring Boot 3 (Java 17/21) Backend
 │   ├── .env                   # Backend environment configuration
 │   ├── pom.xml                # Maven dependencies (Spring Boot, POI, ZXing, Jackson)
@@ -100,8 +100,9 @@ Excel-Decoding-project/
 │   │   ├── ExcelReconcilerApplication.java # Entrypoint with automatic .env loader
 │   │   ├── config/            # Async thread pools & CORS configuration
 │   │   ├── controller/        # REST API endpoints (/api/v1/barcodes/reconcile)
-│   │   ├── service/           # GeminiVisionService, ZXingDecoderService,
-│   │   │                      # ExcelHighlightService, ReconciliationService
+│   │   ├── service/           # OllamaVisionService, ZXingDecoderService,
+│   │   │                      # ExcelImageExtractorService, ExcelHighlightService,
+│   │   │                      # ReconciliationService
 │   │   ├── util/              # BarcodeValidator (GS1 Modulo-10 Checksum)
 │   │   └── model/             # BarcodeResult, ExcelRowPreview, ReconciliationResponse
 │   └── src/main/resources/
@@ -111,11 +112,19 @@ Excel-Decoding-project/
 │   ├── package.json           # Dependencies (React, Lucide, Tailwind, Canvas-Confetti)
 │   ├── vite.config.ts         # Vite server proxy configuration
 │   └── src/
-│       ├── components/        # FileUploadZone, ExcelPreviewTable, ImageScanGrid,
-│       │                      # ReconciliationStats, Header
-│       ├── services/api.ts    # Multipart upload client & Excel downloader
-│       ├── types/index.ts     # TypeScript data contracts
-│       └── App.tsx            # Main Application View
+│       ├── app/                # Application composition and shell UI
+│       │   ├── App.tsx         # Main application view
+│       │   └── components/
+│       │       └── AppHeader.tsx
+│       ├── features/
+│       │   └── reconciliation/
+│       │       ├── api/        # Multipart upload client and Excel downloader
+│       │       ├── components/ # Upload, preview, stats, and scan result UI
+│       │       └── model/      # Reconciliation types and upload validation
+│       ├── shared/
+│       │   └── i18n/           # Khmer-only provider and translations
+│       ├── styles/index.css    # Global Tailwind/base styles
+│       └── main.tsx            # React entrypoint
 │
 └── sample-data/               # Pre-configured test files
     ├── sample_inventory.xlsx  # Multi-sheet inventory spreadsheet
@@ -126,15 +135,12 @@ Excel-Decoding-project/
 
 ## ⚙️ Environment Configuration
 
-Set your Google AI Studio API key in `.env`:
+Configure the local Ollama model in `.env`:
 
 ```env
-# Google AI Studio API Key
-# Get your free key at: https://aistudio.google.com/app/apikey
-GEMINI_API_KEY=AIzaSy...your-key-here...
-
-# Default Gemini Vision Model
-GEMINI_API_MODEL=gemini-3.5-flash-lite
+# Local Ollama vision model
+OLLAMA_API_MODEL=qwen3-vl:8b-instruct
+OLLAMA_API_URL=http://localhost:11434/api/chat
 ```
 
 ---
@@ -145,6 +151,7 @@ GEMINI_API_MODEL=gemini-3.5-flash-lite
 - **Java 17+** (OpenJDK recommended)
 - **Maven 3.8+**
 - **Node.js 18+** & **npm**
+- **Ollama** with `qwen3-vl:8b-instruct` downloaded
 
 ---
 
@@ -170,7 +177,7 @@ npm run dev
 ---
 
 ### Step 3: Reconcile Barcodes & Excel
-1. Drop your `.xlsx` spreadsheet into **Step 1: Excel Spreadsheet**.
+1. Drop your `.xlsx`, `.xls`, or `.csv` spreadsheet, or a `.png`, `.jpg`, `.jpeg`, or `.webp` image of an Excel table, into **Step 1**.
 2. Drop your product photos or multi-barcode sheets into **Step 2: Barcode / QR Images**.
 3. Click **"Start Reconcile & Highlight"**.
 4. View your matched items in red on the spreadsheet preview and click **"Download Highlighted Excel"**!
@@ -184,4 +191,12 @@ Run the automated backend test suite:
 ```bash
 cd backend
 mvn test
+```
+
+Run the frontend build and focused upload/localization checks:
+
+```bash
+cd frontend
+npm run build
+node --experimental-strip-types --test tests/fileValidation.test.ts tests/i18n.test.ts
 ```

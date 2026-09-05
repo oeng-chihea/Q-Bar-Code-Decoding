@@ -4,7 +4,8 @@ import {
   CheckCheck,
   Search,
 } from 'lucide-react';
-import type { BarcodeResult } from '../types';
+import type { BarcodeResult } from '@/features/reconciliation/model/types';
+import { useTranslation } from '@/shared/i18n/i18n';
 
 interface ImageScanGridProps {
   scanResults: BarcodeResult[];
@@ -15,6 +16,7 @@ export const ImageScanGrid = ({
   scanResults,
   matchedCodes,
 }: ImageScanGridProps) => {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
 
   const normalize = (str: string) =>
@@ -69,10 +71,10 @@ export const ImageScanGrid = ({
           <CheckCheck className="w-5 h-5 text-[#34D399]" />
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-wider m-0">
-              Matched Barcodes
+              {t('matches.title')}
             </h3>
             <p className="text-xs text-[#8E929E] m-0 mt-0.5">
-              Showing barcode numbers extracted from your images that matched entries in your spreadsheet
+              {t('matches.subtitle')}
             </p>
           </div>
         </div>
@@ -85,7 +87,7 @@ export const ImageScanGrid = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search matched barcode..."
+              placeholder={t('matches.search')}
               className="pl-8 pr-3 py-1.5 rounded-md bg-[#16171B] border border-[#2B2D35] text-xs text-[#F3F4F6] placeholder-[#737887] focus:outline-none focus:border-[#A0E3E2] w-full sm:w-56"
             />
           </div>
@@ -97,8 +99,8 @@ export const ImageScanGrid = ({
         {filteredResults.length === 0 ? (
           <div className="col-span-full py-8 text-center text-xs text-[#737887] bg-[#16171B] rounded-md border border-[#26272E]">
             {matchedResults.length === 0
-              ? 'No matching barcode numbers were found in the uploaded spreadsheet.'
-              : 'No items match your search query.'}
+              ? t('matches.none')
+              : t('matches.noSearch')}
           </div>
         ) : (
           filteredResults.map((item, index) => {
@@ -113,12 +115,12 @@ export const ImageScanGrid = ({
                   {/* Top Bar with Match Count Tag */}
                   <div className="flex items-center justify-between gap-1 mb-2.5">
                     <span className="text-[11px] font-medium text-[#8E929E] truncate">
-                      Image #{index + 1}
+                      {t('matches.image', { number: index + 1 })}
                     </span>
 
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-semibold bg-[#143827] text-[#34D399] border border-[#1E4D36]">
                       <CheckCircle2 className="w-2.5 h-2.5" />
-                      {itemMatchedCodes.length > 1 ? `${itemMatchedCodes.length} Barcodes Matched` : 'Matched in Red'}
+                      {itemMatchedCodes.length > 1 ? t('matches.multiMatched', { count: itemMatchedCodes.length }) : t('matches.matchedInRed')}
                     </span>
                   </div>
 
@@ -151,4 +153,3 @@ export const ImageScanGrid = ({
     </div>
   );
 };
-

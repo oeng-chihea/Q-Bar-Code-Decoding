@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import confetti from 'canvas-confetti';
 import { AlertCircle } from 'lucide-react';
-import { Header } from './components/Header';
-import { FileUploadZone } from './components/FileUploadZone';
-import { ReconciliationStats } from './components/ReconciliationStats';
-import { ImageScanGrid } from './components/ImageScanGrid';
-import { ExcelPreviewTable } from './components/ExcelPreviewTable';
-import type { ReconciliationResponse } from './types';
-import { reconcileFiles } from './services/api';
+import { AppHeader } from '@/app/components/AppHeader';
+import { FileUploadZone } from '@/features/reconciliation/components/FileUploadZone';
+import { ReconciliationStats } from '@/features/reconciliation/components/ReconciliationStats';
+import { ImageScanGrid } from '@/features/reconciliation/components/ImageScanGrid';
+import { ExcelPreviewTable } from '@/features/reconciliation/components/ExcelPreviewTable';
+import type { ReconciliationResponse } from '@/features/reconciliation/model/types';
+import { reconcileFiles } from '@/features/reconciliation/api/reconciliationApi';
+import { localizeError, useTranslation } from '@/shared/i18n/i18n';
 
 export function App() {
+  const { t } = useTranslation();
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -42,8 +44,8 @@ export function App() {
         // ignore confetti errors
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'An unexpected error occurred during reconciliation';
-      setError(msg);
+      const msg = err instanceof Error ? err.message : t('errors.unexpected');
+      setError(localizeError(msg));
     } finally {
       setIsProcessing(false);
     }
@@ -58,7 +60,7 @@ export function App() {
   return (
     <div className="min-h-screen bg-[#121316] text-[#F3F4F6] flex flex-col selection:bg-[#A0E3E2] selection:text-[#0E1726]">
       {/* Navigation Header */}
-      <Header
+      <AppHeader
         onReset={handleReset}
         isProcessing={isProcessing}
         hasResults={!!results}
@@ -77,7 +79,7 @@ export function App() {
               onClick={() => setError(null)}
               className="text-xs font-semibold underline hover:text-white cursor-pointer"
             >
-              Dismiss
+              {t('common.dismiss')}
             </button>
           </div>
         )}
@@ -88,10 +90,10 @@ export function App() {
             {/* Hero Title */}
             <div className="text-center max-w-2xl mx-auto space-y-2 pt-4">
               <h2 className="text-3xl font-bold tracking-tight text-white m-0">
-                Reconcile Barcode Images with Excel
+                {t('app.heroTitle')}
               </h2>
               <p className="text-sm text-[#8E929E] m-0">
-                Upload your inventory spreadsheet and photos of barcodes or QR codes. The system automatically decodes each image, matches against the catalog, and highlights matches in <span className="text-[#FB7185] font-semibold">RED</span>.
+                {t('app.heroDescription')}
               </p>
             </div>
 
@@ -117,6 +119,7 @@ export function App() {
               columns={results.columns}
               previewRows={results.previewRows}
               matchedColumnName={results.matchedColumnName}
+              matchedColumnConfidence={results.matchedColumnConfidence}
               activeSheetName={results.activeSheetName}
               totalRows={results.excelTotalRows}
               matchedCount={results.matchedRowsCount}
@@ -137,4 +140,3 @@ export function App() {
 }
 
 export default App;
-

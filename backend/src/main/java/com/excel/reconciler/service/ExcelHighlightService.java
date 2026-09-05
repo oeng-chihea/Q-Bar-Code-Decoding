@@ -26,11 +26,22 @@ public class ExcelHighlightService {
         private final List<String> columnHeaders;
         private final Set<String> matchedCodes;
         private final List<ExcelRowPreview> previewRows;
+        private final double matchedColumnConfidence;
+        private final List<Integer> identifierColumnIndexes;
 
         public ExcelProcessingResult(byte[] modifiedExcelBytes, int totalRows, int matchedRowsCount,
                                      String resolvedColumnName, String activeSheetName,
                                      List<String> columnHeaders, Set<String> matchedCodes,
                                      List<ExcelRowPreview> previewRows) {
+            this(modifiedExcelBytes, totalRows, matchedRowsCount, resolvedColumnName, activeSheetName,
+                    columnHeaders, matchedCodes, previewRows, 0.0, List.of());
+        }
+
+        public ExcelProcessingResult(byte[] modifiedExcelBytes, int totalRows, int matchedRowsCount,
+                                     String resolvedColumnName, String activeSheetName,
+                                     List<String> columnHeaders, Set<String> matchedCodes,
+                                     List<ExcelRowPreview> previewRows, double matchedColumnConfidence,
+                                     List<Integer> identifierColumnIndexes) {
             this.modifiedExcelBytes = modifiedExcelBytes;
             this.totalRows = totalRows;
             this.matchedRowsCount = matchedRowsCount;
@@ -39,6 +50,9 @@ public class ExcelHighlightService {
             this.columnHeaders = columnHeaders;
             this.matchedCodes = matchedCodes;
             this.previewRows = previewRows;
+            this.matchedColumnConfidence = matchedColumnConfidence;
+            this.identifierColumnIndexes = identifierColumnIndexes == null
+                    ? List.of() : List.copyOf(identifierColumnIndexes);
         }
 
         public byte[] getModifiedExcelBytes() {
@@ -72,6 +86,14 @@ public class ExcelHighlightService {
         public List<ExcelRowPreview> getPreviewRows() {
             return previewRows;
         }
+
+        public double getMatchedColumnConfidence() {
+            return matchedColumnConfidence;
+        }
+
+        public List<Integer> getIdentifierColumnIndexes() {
+            return identifierColumnIndexes;
+        }
     }
 
     private static class SheetHeaderInfo {
@@ -80,7 +102,11 @@ public class ExcelHighlightService {
         String resolvedColName;
         List<String> headers;
         int score;
+        double confidence;
+        List<Integer> identifierColumnIndexes = List.of();
     }
+
+    private final SpreadsheetSchemaDetector schemaDetector = new SpreadsheetSchemaDetector();
 
     public ExcelProcessingResult highlightMatches(InputStream inputStream, Set<String> decodedCodes,
                                                  String preferredColumnName, boolean highlightFullRow) throws Exception {
@@ -91,14 +117,14 @@ public class ExcelHighlightService {
             throw new IllegalArgumentException("The uploaded Excel workbook contains no sheets");
         }
 
-        // Prepare normalized lookup set of decoded codes
-        Set<String> normalizedDecodedCodes = new HashSet<>();
-        Map<String, String> normalizedToOriginal = new HashMap<>();
+        // Prepare decoded code lookup map (normalized -> original)
+        Map<String, String> normalizedToOriginal = new LinkedHashMap<>();
         for (String code : decodedCodes) {
             if (code != null && !code.trim().isEmpty()) {
                 String norm = normalize(code);
-                normalizedDecodedCodes.add(norm);
-                normalizedToOriginal.put(norm, code);
+                if (!norm.isEmpty()) {
+                    normalizedToOriginal.put(norm, code.trim());
+                }
             }
         }
 
@@ -119,7 +145,9 @@ public class ExcelHighlightService {
             Sheet sheet = workbook.getSheetAt(s);
             if (sheet == null || sheet.getPhysicalNumberOfRows() == 0) continue;
 
-            SheetHeaderInfo headerInfo = findBestHeaderRow(sheet, formatter, preferredColumnName);
+            SpreadsheetSchemaDetector.Detection detection = schemaDetector.detect(
+                    sheet, formatter, decodedCodes, preferredColumnName);
+            SheetHeaderInfo headerInfo = toHeaderInfo(detection);
             if (headerInfo == null) continue;
 
             int sheetMatchedCount = 0;
@@ -135,22 +163,27 @@ public class ExcelHighlightService {
                 String matchedValInRow = "";
                 List<Cell> cellsToHighlight = new ArrayList<>();
 
-                // Check all cells in row strictly for barcode matches
-                for (int c = 0; c < row.getLastCellNum(); c++) {
+                // Match only the columns identified as identifiers. This
+                // prevents a code printed inside a product description from
+                // being treated as the row's barcode.
+                for (int c : headerInfo.identifierColumnIndexes) {
+                    if (c < 0 || c >= row.getLastCellNum()) continue;
                     Cell cell = row.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                    String val = formatter.formatCellValue(cell).trim();
+                    String val = formatter.formatCellValue(cell);
                     String norm = normalize(val);
-                    if (!norm.isEmpty() && normalizedDecodedCodes.contains(norm)) {
+                    if (norm.isEmpty()) continue;
+
+                    String matchedDecodedOriginal = findMatchingDecodedCode(norm, normalizedToOriginal);
+                    if (matchedDecodedOriginal != null) {
                         isMatch = true;
                         matchedValInRow = val;
                         cellsToHighlight.add(cell);
+                        allMatchedCodes.add(matchedDecodedOriginal);
                     }
                 }
 
                 if (isMatch) {
                     sheetMatchedCount++;
-                    String originalCode = normalizedToOriginal.get(normalize(matchedValInRow));
-                    allMatchedCodes.add(originalCode != null ? originalCode : matchedValInRow);
 
                     if (highlightFullRow) {
                         for (int c = 0; c < headerInfo.headers.size(); c++) {
@@ -165,17 +198,18 @@ public class ExcelHighlightService {
                 }
 
                 Cell targetCell = row.getCell(headerInfo.targetColIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                String targetVal = formatter.formatCellValue(targetCell).trim();
+                String targetVal = formatter.formatCellValue(targetCell);
+
+                Map<String, String> cellData = new LinkedHashMap<>();
+                for (int c = 0; c < headerInfo.headers.size(); c++) {
+                    Cell cCell = row.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+                    String colHeader = headerInfo.headers.get(c);
+                    String val = formatter.formatCellValue(cCell);
+                    cellData.put(colHeader, val);
+                }
 
                 // Capture preview rows
                 if (currentSheetPreviews.size() < 500) {
-                    Map<String, String> cellData = new LinkedHashMap<>();
-                    for (int c = 0; c < headerInfo.headers.size(); c++) {
-                        Cell cCell = row.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                        String val = formatter.formatCellValue(cCell);
-                        String colHeader = headerInfo.headers.get(c);
-                        cellData.put(colHeader, val);
-                    }
                     currentSheetPreviews.add(new ExcelRowPreview(r, cellData, isMatch ? matchedValInRow : targetVal, isMatch));
                 }
             }
@@ -199,6 +233,8 @@ public class ExcelHighlightService {
             primaryHeaderInfo = new SheetHeaderInfo();
             primaryHeaderInfo.resolvedColName = preferredColumnName != null ? preferredColumnName : "QR Barcode";
             primaryHeaderInfo.headers = List.of("Column 1");
+            primaryHeaderInfo.confidence = 0.0;
+            primaryHeaderInfo.identifierColumnIndexes = List.of(0);
         }
 
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -213,112 +249,111 @@ public class ExcelHighlightService {
                 primarySheet.getSheetName(),
                 primaryHeaderInfo.headers,
                 allMatchedCodes,
-                primaryPreviewRows
+                primaryPreviewRows,
+                primaryHeaderInfo.confidence,
+                primaryHeaderInfo.identifierColumnIndexes
         );
     }
 
-    private SheetHeaderInfo findBestHeaderRow(Sheet sheet, DataFormatter formatter, String preferredColName) {
-        String searchColName = (preferredColName != null && !preferredColName.trim().isEmpty())
-                ? preferredColName.trim() : "QR Barcode";
-        String normSearch = normalize(searchColName);
+    private SheetHeaderInfo toHeaderInfo(SpreadsheetSchemaDetector.Detection detection) {
+        if (detection == null) return null;
+        SheetHeaderInfo info = new SheetHeaderInfo();
+        info.headerRowNum = detection.headerRowNum();
+        info.targetColIndex = detection.identifierColumnIndexes().isEmpty()
+                ? 0 : detection.identifierColumnIndexes().get(0);
+        info.resolvedColName = detection.resolvedColumnName();
+        info.headers = detection.headers();
+        info.score = (int) Math.round(detection.score());
+        info.confidence = detection.confidence();
+        info.identifierColumnIndexes = detection.identifierColumnIndexes();
+        return info;
+    }
 
-        SheetHeaderInfo bestInfo = null;
-        int maxScanRows = Math.min(20, sheet.getLastRowNum() + 1);
+    /**
+     * Intelligent matching between Excel cell value (normalized) and scanned decoded codes.
+     * Supports exact match, Unicode/format canonicalization, UPC-A 11/12-digit
+     * truncation alignment, EAN-13 padding, and a constrained numeric waybill
+     * prefix variant.
+     */
+    public String findMatchingDecodedCode(String cellNorm, Map<String, String> normalizedToOriginal) {
+        if (cellNorm == null || cellNorm.isEmpty()) return null;
 
-        for (int r = 0; r < maxScanRows; r++) {
-            Row row = sheet.getRow(r);
-            if (row == null || row.getLastCellNum() <= 0) continue;
+        // 1. Direct exact normalized match
+        if (normalizedToOriginal.containsKey(cellNorm)) {
+            return normalizedToOriginal.get(cellNorm);
+        }
 
-            List<String> headers = new ArrayList<>();
-            int targetColIdx = -1;
-            String resolvedCol = null;
-            int score = 0;
-            int textHeaderCount = 0;
-            boolean hasNumericCell = false;
+        boolean cellIsDigits = cellNorm.matches("^\\d+$");
+        String cellNoZeros = cellNorm.replaceFirst("^0+", "");
 
-            for (int c = 0; c < row.getLastCellNum(); c++) {
-                Cell cell = row.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                String text = formatter.formatCellValue(cell).trim();
+        for (Map.Entry<String, String> entry : normalizedToOriginal.entrySet()) {
+            String decodedNorm = entry.getKey();
+            String original = entry.getValue();
 
-                // Skip formula definition text
-                if (cell.getCellType() == CellType.FORMULA || text.startsWith("=") || text.contains("(") || text.contains("!")) {
-                    headers.add("Column " + (c + 1));
-                    continue;
-                }
-
-                // If cell is a data number (e.g. 12, $49.99, or pure numeric barcode), this row is likely a data row, not a header!
-                if (text.matches("^\\$?\\d+(\\.\\d+)?$") || text.matches("^\\d{8,18}$")) {
-                    hasNumericCell = true;
-                }
-
-                headers.add(text.isEmpty() ? "Column " + (c + 1) : text);
-
-                if (!text.isEmpty() && text.length() < 40 && !text.matches("^\\d+$")) {
-                    textHeaderCount++;
-                    String normText = normalize(text);
-
-                    // Exact or strong column match
-                    if (text.equalsIgnoreCase(searchColName)) {
-                        targetColIdx = c;
-                        resolvedCol = text;
-                        score += 300;
-                    } else if (normText.contains("barcode") || normText.contains("qrcode") || normText.contains("upc") || normText.contains("ean") || normText.contains(normSearch)) {
-                        if (targetColIdx == -1) {
-                            targetColIdx = c;
-                            resolvedCol = text;
-                        }
-                        score += 200;
-                    } else if (normText.contains("itemid") || normText.contains("sku") || normText.contains("productid") || normText.contains("itemcode")) {
-                        if (targetColIdx == -1) {
-                            targetColIdx = c;
-                            resolvedCol = text;
-                        }
-                        score += 80;
-                    } else if (normText.contains("no") || normText.contains("itemname") || normText.contains("product") || normText.contains("category") || normText.contains("quantity") || normText.contains("price") || normText.contains("cost")) {
-                        score += 40;
-                    }
-                }
+            // Direct equality
+            if (cellNorm.equals(decodedNorm)) {
+                return original;
             }
 
-            // A valid table header must be text labels (not data numbers) and have multiple column titles
-            if (!hasNumericCell && textHeaderCount >= 3) {
-                if (targetColIdx == -1) {
-                    // Check if next row has barcodes in any column
-                    if (r + 1 <= sheet.getLastRowNum()) {
-                        Row nextRow = sheet.getRow(r + 1);
-                        if (nextRow != null) {
-                            for (int c = 0; c < nextRow.getLastCellNum(); c++) {
-                                Cell cCell = nextRow.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                                String val = formatter.formatCellValue(cCell).trim();
-                                if (val.matches("^\\d{8,18}$")) {
-                                    targetColIdx = c;
-                                    resolvedCol = headers.size() > c ? headers.get(c) : "Barcode";
-                                    break;
-                                }
-                            }
-                        }
+            boolean decodedIsDigits = decodedNorm.matches("^\\d+$");
+
+            if (cellIsDigits && decodedIsDigits) {
+                String decodedNoZeros = decodedNorm.replaceFirst("^0+", "");
+
+                // Equal with leading zeros stripped (e.g. 0638201948512 vs 638201948512)
+                if (!cellNoZeros.isEmpty() && cellNoZeros.equals(decodedNoZeros)) {
+                    return original;
+                }
+
+                // UPC-A 11-digit scan vs 12-digit Excel (missing outer system digit or check digit)
+                if (decodedNorm.length() == 11 && cellNorm.length() == 12) {
+                    if (cellNorm.endsWith(decodedNorm) || cellNorm.startsWith(decodedNorm)) {
+                        return original;
                     }
                 }
 
-                if (targetColIdx == -1) {
-                    targetColIdx = 0;
-                    resolvedCol = headers.get(0);
+                // 12-digit scan vs 11-digit Excel
+                if (decodedNorm.length() == 12 && cellNorm.length() == 11) {
+                    if (decodedNorm.endsWith(cellNorm) || decodedNorm.startsWith(cellNorm)) {
+                        return original;
+                    }
                 }
 
-                SheetHeaderInfo info = new SheetHeaderInfo();
-                info.headerRowNum = r;
-                info.targetColIndex = targetColIdx;
-                info.resolvedColName = resolvedCol;
-                info.headers = headers;
-                info.score = score + (textHeaderCount * 20);
-
-                if (bestInfo == null || info.score > bestInfo.score) {
-                    bestInfo = info;
+                // EAN-13 (13 digits) vs UPC-A (12 digits)
+                if (cellNorm.length() == 13 && decodedNorm.length() == 12) {
+                    if (cellNorm.equals("0" + decodedNorm) || cellNorm.endsWith(decodedNorm)) {
+                        return original;
+                    }
+                }
+                if (decodedNorm.length() == 13 && cellNorm.length() == 12) {
+                    if (decodedNorm.equals("0" + cellNorm) || decodedNorm.endsWith(cellNorm)) {
+                        return original;
+                    }
+                }
+            } else if (cellNorm.length() >= 5 && decodedNorm.length() >= 5) {
+                // Some logistics systems add a letter prefix to an otherwise
+                // numeric waybill (J01394871642 vs 01394871642). Do not use
+                // broad suffix matching for two arbitrary alphanumeric IDs;
+                // that can turn a description or a different SKU into a hit.
+                if (isPrefixedNumeric(cellNorm, decodedNorm)
+                        || isPrefixedNumeric(decodedNorm, cellNorm)) {
+                    String prefixed = cellNorm.matches("^[a-z]+\\d+$") ? cellNorm : decodedNorm;
+                    String numeric = cellNorm.matches("^\\d+$") ? cellNorm : decodedNorm;
+                    String numericPart = prefixed.replaceFirst("^[a-z]+", "");
+                    if (numericPart.equals(numeric)) {
+                        return original;
+                    }
                 }
             }
         }
 
-        return bestInfo;
+        return null;
+    }
+
+    private boolean isPrefixedNumeric(String first, String second) {
+        return first != null && second != null
+                && first.matches("^[a-z]+\\d+$")
+                && second.matches("^\\d+$");
     }
 
     private CellStyle createRedHighlightStyle(Workbook workbook) {
@@ -350,8 +385,7 @@ public class ExcelHighlightService {
         return style;
     }
 
-    private String normalize(String str) {
-        if (str == null) return "";
-        return str.trim().replaceAll("[\\s_\\-/:()!']+", "").toLowerCase(Locale.ROOT);
+    public static String normalize(String str) {
+        return IdentifierCanonicalizer.canonicalize(str == null ? null : str.trim());
     }
 }

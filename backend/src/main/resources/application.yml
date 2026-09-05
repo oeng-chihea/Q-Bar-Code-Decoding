@@ -9,8 +9,7 @@ spring:
       max-file-size: 100MB
       max-request-size: 100MB
 
-gemini:
+ollama:
   api:
-    key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_API_MODEL:gemini-3.5-flash-lite}
-    url: https://generativelanguage.googleapis.com/v1beta/models
+    model: ${OLLAMA_API_MODEL:qwen3-vl:8b-instruct}
+    url: ${OLLAMA_API_URL:http://localhost:11434/api/chat}

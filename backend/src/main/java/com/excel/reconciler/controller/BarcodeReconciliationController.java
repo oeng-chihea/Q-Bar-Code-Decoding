@@ -2,6 +2,7 @@ package com.excel.reconciler.controller;
 
 import com.excel.reconciler.model.ReconciliationResponse;
 import com.excel.reconciler.service.ReconciliationService;
+import com.excel.reconciler.util.SpreadsheetFileValidator;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -36,24 +37,22 @@ public class BarcodeReconciliationController {
             @RequestParam("excelFile") MultipartFile excelFile,
             @RequestParam(value = "images", required = false) List<MultipartFile> images,
             @RequestParam(value = "columnName", required = false, defaultValue = "QR Barcode") String columnName,
-            @RequestParam(value = "highlightFullRow", required = false, defaultValue = "false") boolean highlightFullRow,
-            @RequestHeader(value = "X-Gemini-API-Key", required = false) String headerApiKey,
-            @RequestParam(value = "geminiApiKey", required = false) String paramApiKey) {
+            @RequestParam(value = "highlightFullRow", required = false, defaultValue = "false") boolean highlightFullRow) {
 
         try {
             if (excelFile == null || excelFile.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Excel file (.xlsx or .xls) is required"));
+                return ResponseEntity.badRequest().body(Map.of("error", SpreadsheetFileValidator.ERROR_MESSAGE));
             }
 
+            SpreadsheetFileValidator.requireSupported(excelFile);
+
             List<MultipartFile> safeImages = (images != null) ? images : Collections.emptyList();
-            String effectiveApiKey = (paramApiKey != null && !paramApiKey.isBlank()) ? paramApiKey : headerApiKey;
 
             ReconciliationResponse response = reconciliationService.reconcile(
                     excelFile,
                     safeImages,
                     columnName,
-                    highlightFullRow,
-                    effectiveApiKey
+                    highlightFullRow
             );
 
             return ResponseEntity.ok(response);

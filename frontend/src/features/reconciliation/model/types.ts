@@ -2,7 +2,7 @@ export interface BarcodeResult {
   filename: string;
   decodedValue?: string;
   allExtractedValues?: string[];
-  decoderType: 'ZXING' | 'GEMINI_AI' | 'FAILED';
+  decoderType: 'ZXING' | 'OLLAMA_AI' | 'FAILED';
   success: boolean;
   barcodeFormat?: string;
   errorMessage?: string;
@@ -23,6 +23,8 @@ export interface ReconciliationResponse {
   matchedRowsCount: number;
   unmatchedImagesCount: number;
   matchedColumnName: string;
+  matchedColumnConfidence?: number;
+  identifierColumnIndexes?: number[];
   activeSheetName?: string;
   columns: string[];
   scanResults: BarcodeResult[];
@@ -32,11 +34,11 @@ export interface ReconciliationResponse {
   previewRows: ExcelRowPreview[];
   highlightedExcelBase64: string;
   downloadFileName: string;
+  excelSourceType?: 'EXCEL_FILE' | 'EXCEL_TABLE_IMAGE';
   executionTimeMs: number;
 }
 
 export interface ReconciliationConfig {
   columnName: string;
   highlightFullRow: boolean;
-  geminiApiKey: string;
 }

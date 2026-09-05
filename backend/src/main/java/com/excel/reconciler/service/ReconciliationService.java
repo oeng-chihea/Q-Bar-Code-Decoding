@@ -2,11 +2,13 @@ package com.excel.reconciler.service;
 
 import com.excel.reconciler.model.BarcodeResult;
 import com.excel.reconciler.model.ReconciliationResponse;
+import com.excel.reconciler.util.SpreadsheetFileValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.*;
 
@@ -16,26 +18,47 @@ public class ReconciliationService {
 
     private final BarcodeDecoderService barcodeDecoderService;
     private final ExcelHighlightService excelHighlightService;
+    private final ExcelImageExtractorService excelImageExtractorService;
 
     public ReconciliationService(BarcodeDecoderService barcodeDecoderService,
-                                 ExcelHighlightService excelHighlightService) {
+                                 ExcelHighlightService excelHighlightService,
+                                 ExcelImageExtractorService excelImageExtractorService) {
         this.barcodeDecoderService = barcodeDecoderService;
         this.excelHighlightService = excelHighlightService;
+        this.excelImageExtractorService = excelImageExtractorService;
     }
 
     public ReconciliationResponse reconcile(MultipartFile excelFile,
                                            List<MultipartFile> imageFiles,
                                            String columnName,
-                                           boolean highlightFullRow,
-                                           String geminiApiKey) throws Exception {
+                                           boolean highlightFullRow) throws Exception {
         long startTime = System.currentTimeMillis();
 
         if (excelFile == null || excelFile.isEmpty()) {
-            throw new IllegalArgumentException("Excel spreadsheet file is required");
+            throw new IllegalArgumentException(SpreadsheetFileValidator.ERROR_MESSAGE);
+        }
+
+        SpreadsheetFileValidator.requireSupported(excelFile);
+
+        boolean excelTableImage = SpreadsheetFileValidator.isImage(excelFile);
+        byte[] workbookBytes;
+        String excelSourceType;
+        if (excelTableImage) {
+            ExcelImageExtractorService.ExtractedExcelData extracted =
+                    excelImageExtractorService.processExcelImage(excelFile);
+            workbookBytes = extracted.getExcelBytes();
+            if (workbookBytes == null || workbookBytes.length == 0) {
+                throw new IllegalArgumentException(
+                        "The uploaded Excel table image could not be converted into a spreadsheet.");
+            }
+            excelSourceType = "EXCEL_TABLE_IMAGE";
+        } else {
+            workbookBytes = excelFile.getBytes();
+            excelSourceType = "EXCEL_FILE";
         }
 
         // 1. Decode all images in parallel
-        List<BarcodeResult> scanResults = barcodeDecoderService.decodeBatch(imageFiles, geminiApiKey);
+        List<BarcodeResult> scanResults = barcodeDecoderService.decodeBatch(imageFiles);
 
         // 2. Aggregate all barcodes and SKUs across all uploaded images/sheets
         Set<String> allDecodedCodes = new LinkedHashSet<>();
@@ -57,22 +80,30 @@ public class ReconciliationService {
             }
         }
 
-        // 3. Highlight matches in Excel spreadsheet
+        // 3. Highlight matches in the uploaded Excel spreadsheet
         ExcelHighlightService.ExcelProcessingResult excelResult;
-        try (InputStream is = excelFile.getInputStream()) {
+
+        try (InputStream is = new ByteArrayInputStream(workbookBytes)) {
             excelResult = excelHighlightService.highlightMatches(is, allDecodedCodes, columnName, highlightFullRow);
         }
 
         // 4. Calculate unmatched codes
         Set<String> unmatchedCodes = new LinkedHashSet<>();
+        Set<String> matchedCodesSet = excelResult.getMatchedCodes();
         for (String decoded : allDecodedCodes) {
             boolean matched = false;
-            String normDecoded = decoded.trim().replaceAll("[\\s_\\-/:()]+", "").toLowerCase(Locale.ROOT);
-            for (String matchedCode : excelResult.getMatchedCodes()) {
-                String normMatched = matchedCode.trim().replaceAll("[\\s_\\-/:()]+", "").toLowerCase(Locale.ROOT);
-                if (normDecoded.equals(normMatched)) {
-                    matched = true;
-                    break;
+            if (matchedCodesSet.contains(decoded)) {
+                matched = true;
+            } else {
+                String normDecoded = ExcelHighlightService.normalize(decoded);
+                for (String m : matchedCodesSet) {
+                    String normM = ExcelHighlightService.normalize(m);
+                    if (normDecoded.equals(normM)
+                            || (normDecoded.length() == 11 && normM.length() == 12 && normM.endsWith(normDecoded))
+                            || (normDecoded.length() == 12 && normM.length() == 11 && normDecoded.endsWith(normM))) {
+                        matched = true;
+                        break;
+                    }
                 }
             }
             if (!matched) {
@@ -83,7 +114,8 @@ public class ReconciliationService {
         // 5. Build response
         String base64Excel = Base64.getEncoder().encodeToString(excelResult.getModifiedExcelBytes());
         String originalName = excelFile.getOriginalFilename() != null ? excelFile.getOriginalFilename() : "spreadsheet.xlsx";
-        String downloadName = originalName.replaceFirst("\\.(xlsx|xls)$", "") + "_highlighted.xlsx";
+        String downloadName = originalName.replaceFirst("(?i)\\.(xlsx|xls|csv|png|jpg|jpeg|webp)$", "")
+                + "_highlighted.xlsx";
 
         long executionTimeMs = System.currentTimeMillis() - startTime;
 
@@ -94,6 +126,8 @@ public class ReconciliationService {
         response.setMatchedRowsCount(excelResult.getMatchedRowsCount());
         response.setUnmatchedImagesCount(unmatchedCodes.size());
         response.setMatchedColumnName(excelResult.getResolvedColumnName());
+        response.setMatchedColumnConfidence(excelResult.getMatchedColumnConfidence());
+        response.setIdentifierColumnIndexes(excelResult.getIdentifierColumnIndexes());
         response.setActiveSheetName(excelResult.getActiveSheetName());
         response.setColumns(excelResult.getColumnHeaders());
         response.setScanResults(scanResults);
@@ -103,6 +137,7 @@ public class ReconciliationService {
         response.setPreviewRows(excelResult.getPreviewRows());
         response.setHighlightedExcelBase64(base64Excel);
         response.setDownloadFileName(downloadName);
+        response.setExcelSourceType(excelSourceType);
         response.setExecutionTimeMs(executionTimeMs);
 
         log.info("Reconciliation complete: {} images scanned, {} decoded, {} matched in Excel (Sheet '{}') in {}ms",

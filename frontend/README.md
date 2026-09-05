@@ -1,32 +1,43 @@
-# React + TypeScript + Vite
+# Excel Barcode Reconciler Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + TypeScript + Vite frontend for reconciling barcode/QR photos against Excel workbooks or images of Excel tables.
 
-Currently, two official plugins are available:
+The first upload accepts `.xlsx`, `.xls`, `.csv`, `.png`, `.jpg`, `.jpeg`, and `.webp`. Table images are converted by the backend OCR pipeline before reconciliation.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Development
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The Vite dev server runs at `http://localhost:5173` and proxies `/api` requests to the backend at `http://localhost:8080`.
+
+## Source structure
+
+```text
+src/
+├── app/
+│   ├── App.tsx
+│   └── components/AppHeader.tsx
+├── features/reconciliation/
+│   ├── api/reconciliationApi.ts
+│   ├── components/
+│   └── model/
+├── shared/i18n/i18n.ts
+├── styles/index.css
+└── main.tsx
+```
+
+- `app/` composes the application and owns app-shell UI.
+- `features/reconciliation/` contains reconciliation components, API calls, validation, and data contracts.
+- `shared/i18n/` contains the Khmer-only language provider and translation utilities.
+- `styles/` contains global Tailwind and base styles.
+
+## Verification
+
+```bash
+node --experimental-strip-types --test tests/fileValidation.test.ts tests/i18n.test.ts
+npm run lint
+npm run build
+```

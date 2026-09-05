@@ -6,13 +6,15 @@ import {
   CheckCircle2,
   Layers,
 } from 'lucide-react';
-import type { ExcelRowPreview } from '../types';
-import { downloadBase64Excel } from '../services/api';
+import type { ExcelRowPreview } from '@/features/reconciliation/model/types';
+import { downloadBase64Excel } from '@/features/reconciliation/api/reconciliationApi';
+import { useTranslation } from '@/shared/i18n/i18n';
 
 interface ExcelPreviewTableProps {
   columns: string[];
   previewRows: ExcelRowPreview[];
   matchedColumnName: string;
+  matchedColumnConfidence?: number;
   activeSheetName?: string;
   totalRows: number;
   matchedCount: number;
@@ -24,12 +26,14 @@ export const ExcelPreviewTable = ({
   columns,
   previewRows,
   matchedColumnName,
+  matchedColumnConfidence,
   activeSheetName,
   totalRows,
   matchedCount,
   highlightedExcelBase64,
   downloadFileName,
 }: ExcelPreviewTableProps) => {
+  const { t } = useTranslation();
   const [onlyMatched, setOnlyMatched] = useState(false);
 
   const displayRows = onlyMatched
@@ -48,19 +52,24 @@ export const ExcelPreviewTable = ({
           <FileSpreadsheet className="w-5 h-5 text-[#34D399]" />
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-wider m-0 flex items-center gap-2 flex-wrap">
-              <span>Spreadsheet Preview</span>
+              <span>{t('preview.title')}</span>
               {activeSheetName && (
                 <span className="text-xs px-2 py-0.5 rounded bg-[#1A2333] text-[#818CF8] border border-[#27354E] font-medium flex items-center gap-1">
                   <Layers className="w-3 h-3" />
-                  Sheet: {activeSheetName}
+                  {t('preview.sheet', { name: activeSheetName })}
                 </span>
               )}
               <span className="text-xs px-2 py-0.5 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36] font-normal">
-                Target: {matchedColumnName}
+                {t('preview.target', { name: matchedColumnName })}
               </span>
+              {matchedColumnConfidence !== undefined && matchedColumnConfidence > 0 && (
+                <span className="text-xs px-2 py-0.5 rounded bg-[#1A2333] text-[#A0E3E2] border border-[#27354E] font-normal">
+                  {t('preview.confidence', { rate: Math.round(matchedColumnConfidence * 100) })}
+                </span>
+              )}
             </h3>
             <p className="text-xs text-[#8E929E] m-0 mt-0.5">
-              Showing preview of first {previewRows.length} rows &bull; {matchedCount} matched rows highlighted in red
+              {t('preview.showing', { count: previewRows.length, matched: matchedCount })}
             </p>
           </div>
         </div>
@@ -76,7 +85,7 @@ export const ExcelPreviewTable = ({
             }`}
           >
             <Filter className="w-3 h-3" />
-            {onlyMatched ? 'Showing Matched Only' : 'Show All Rows'}
+            {onlyMatched ? t('preview.showMatched') : t('preview.showAll')}
           </button>
 
           {/* Download Action */}
@@ -85,7 +94,7 @@ export const ExcelPreviewTable = ({
             className="px-3.5 py-1.5 rounded-md border border-[#A0E3E2]/40 text-xs font-semibold text-[#0E1726] bg-[#A0E3E2] hover:bg-[#8EE0DF] transition shadow-sm flex items-center gap-1.5 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            Download .xlsx
+            {t('preview.download')}
           </button>
         </div>
       </div>
@@ -99,7 +108,7 @@ export const ExcelPreviewTable = ({
                 #
               </th>
               <th className="py-2.5 px-3.5 font-semibold w-24 border-r border-[#2B2D35]">
-                Status
+                {t('preview.status')}
               </th>
               {columns.map((col, idx) => {
                 const isTarget = col.toLowerCase() === matchedColumnName.toLowerCase();
@@ -114,7 +123,7 @@ export const ExcelPreviewTable = ({
                       <span>{col}</span>
                       {isTarget && (
                         <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36]">
-                          TARGET
+                          {t('preview.targetLabel')}
                         </span>
                       )}
                     </div>
@@ -130,7 +139,7 @@ export const ExcelPreviewTable = ({
                   colSpan={columns.length + 2}
                   className="py-8 text-center text-[#737887] text-xs"
                 >
-                  No rows to display with current filter.
+                  {t('preview.noRows')}
                 </td>
               </tr>
             ) : (
@@ -151,7 +160,7 @@ export const ExcelPreviewTable = ({
                       {row.matched ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[#143827] text-[#34D399] border border-[#1E4D36]">
                           <CheckCircle2 className="w-3 h-3" />
-                          MATCH (RED)
+                          {t('preview.matchRed')}
                         </span>
                       ) : (
                         <span className="text-[10px] text-[#737887] font-normal">
@@ -187,10 +196,9 @@ export const ExcelPreviewTable = ({
 
       {totalRows > previewRows.length && (
         <div className="text-[11px] text-[#737887] text-center pt-2">
-          Previewing first {previewRows.length} of {totalRows} total rows. The full modified file with all {matchedCount} highlighted rows is ready in the downloaded Excel file.
+          {t('preview.previewing', { preview: previewRows.length, total: totalRows, matched: matchedCount })}
         </div>
       )}
     </div>
   );
 };
-

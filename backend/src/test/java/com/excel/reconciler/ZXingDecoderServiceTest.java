@@ -33,4 +33,53 @@ public class ZXingDecoderServiceTest {
         assertEquals(testContent, results.get(0).getText());
         assertEquals(BarcodeFormat.QR_CODE, results.get(0).getBarcodeFormat());
     }
+
+    @Test
+    public void testDecodeInvertedQRCode() throws Exception {
+        String testContent = "INVERTED-12345";
+        QRCodeWriter writer = new QRCodeWriter();
+        BitMatrix bitMatrix = writer.encode(testContent, BarcodeFormat.QR_CODE, 200, 200);
+
+        java.awt.image.BufferedImage img = MatrixToImageWriter.toBufferedImage(bitMatrix);
+        // Invert colors: light background becomes dark, dark modules become light
+        for (int y = 0; y < img.getHeight(); y++) {
+            for (int x = 0; x < img.getWidth(); x++) {
+                int rgb = img.getRGB(x, y);
+                img.setRGB(x, y, rgb ^ 0x00FFFFFF);
+            }
+        }
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "PNG", baos);
+        byte[] imageBytes = baos.toByteArray();
+
+        List<Result> results = decoderService.decode(imageBytes);
+
+        assertFalse(results.isEmpty(), "Should decode inverted QR code");
+        assertEquals(testContent, results.get(0).getText());
+    }
+
+    @Test
+    public void testDecodeHighResolutionImage() throws Exception {
+        String testContent = "HIGHRES-PROD-456";
+        QRCodeWriter writer = new QRCodeWriter();
+        BitMatrix bitMatrix = writer.encode(testContent, BarcodeFormat.QR_CODE, 300, 300);
+        java.awt.image.BufferedImage qrImg = MatrixToImageWriter.toBufferedImage(bitMatrix);
+
+        java.awt.image.BufferedImage largeImg = new java.awt.image.BufferedImage(2400, 2400, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = largeImg.createGraphics();
+        g.setColor(java.awt.Color.WHITE);
+        g.fillRect(0, 0, 2400, 2400);
+        g.drawImage(qrImg, 200, 200, null);
+        g.dispose();
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(largeImg, "PNG", baos);
+        byte[] imageBytes = baos.toByteArray();
+
+        List<Result> results = decoderService.decode(imageBytes);
+
+        assertFalse(results.isEmpty(), "Should decode high resolution image barcode");
+        assertEquals(testContent, results.get(0).getText());
+    }
 }

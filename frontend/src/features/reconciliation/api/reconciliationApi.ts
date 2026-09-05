@@ -1,4 +1,4 @@
-import type { ReconciliationConfig, ReconciliationResponse } from '../types';
+import type { ReconciliationConfig, ReconciliationResponse } from '@/features/reconciliation/model/types';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
@@ -17,21 +17,13 @@ export async function reconcileFiles(
     }
 
     if (config?.columnName) {
-      formData.append('columnName', config.columnName);
+        formData.append('columnName', config.columnName);
     }
     if (config?.highlightFullRow !== undefined) {
       formData.append('highlightFullRow', String(config.highlightFullRow));
     }
-    if (config?.geminiApiKey) {
-      formData.append('geminiApiKey', config.geminiApiKey);
-    }
-
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE_URL}/api/v1/barcodes/reconcile`);
-
-    if (config?.geminiApiKey) {
-      xhr.setRequestHeader('X-Gemini-API-Key', config.geminiApiKey);
-    }
 
     if (onProgress && xhr.upload) {
       xhr.upload.onprogress = (event) => {
