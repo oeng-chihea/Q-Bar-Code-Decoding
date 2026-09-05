@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateExcelUpload } from '../src/features/reconciliation/model/fileValidation.ts';
 
-test('accepts native spreadsheet files for the Excel upload', () => {
+test('rejects native spreadsheet files (.xlsx, .xls, .csv) for the Excel upload', () => {
   for (const [name, type] of [
     ['inventory.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
     ['inventory.xls', 'application/vnd.ms-excel'],
@@ -10,8 +10,9 @@ test('accepts native spreadsheet files for the Excel upload', () => {
   ] as const) {
     const result = validateExcelUpload(new File(['spreadsheet'], name, { type }));
 
-    assert.equal(result.accepted, true);
-    assert.equal(result.kind, 'spreadsheet');
+    assert.equal(result.accepted, false);
+    assert.equal(result.kind, 'unsupported');
+    assert.equal(result.errorKey, 'errors.unsupported');
   }
 });
 

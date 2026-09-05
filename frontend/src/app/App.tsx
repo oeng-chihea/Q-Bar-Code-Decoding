@@ -127,10 +127,11 @@ export function App() {
               downloadFileName={results.downloadFileName}
             />
 
-            {/* Matched Barcode Cards */}
+            {/* Unmatched Barcode Cards */}
             <ImageScanGrid
               scanResults={results.scanResults}
               matchedCodes={results.matchedCodes}
+              imageFiles={imageFiles}
             />
           </div>
         )}

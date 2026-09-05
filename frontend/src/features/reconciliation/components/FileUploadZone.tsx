@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
-  FileSpreadsheet,
+  FileImage,
   Images,
   UploadCloud,
   FileCheck,
@@ -43,6 +43,22 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   const [excelDragOver, setExcelDragOver] = useState(false);
   const [imageDragOver, setImageDragOver] = useState(false);
   const [excelErrorKey, setExcelErrorKey] = useState<TranslationKey | null>(null);
+
+  // Memoize preview URL for Excel table image
+  const excelPreviewUrl = useMemo(() => {
+    if (excelFile && isImageFile(excelFile)) {
+      return URL.createObjectURL(excelFile);
+    }
+    return null;
+  }, [excelFile]);
+
+  useEffect(() => {
+    return () => {
+      if (excelPreviewUrl) {
+        URL.revokeObjectURL(excelPreviewUrl);
+      }
+    };
+  }, [excelPreviewUrl]);
 
   // Memoize preview URLs and cleanup previous blob URLs when imageFiles change or component unmounts
   const imagePreviews = useMemo(() => {
@@ -130,7 +146,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           <input
             ref={excelInputRef}
             type="file"
-            accept=".xlsx, .xls, .csv, .png, .jpg, .jpeg, .webp, image/png, image/jpeg, image/webp"
+            accept=".png, .jpg, .jpeg, .webp, image/png, image/jpeg, image/webp"
             className="hidden"
             onChange={(e) => {
               if (e.target.files && e.target.files.length > 0) {
@@ -143,7 +159,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-[#34D399] uppercase tracking-wider">
-                <FileSpreadsheet className="w-4 h-4" />
+                <FileImage className="w-4 h-4" />
                 {t('upload.step1')}
               </div>
               {excelFile && (
@@ -176,7 +192,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             {!excelFile ? (
               <div className="flex flex-col items-center justify-center py-6 text-center">
                 <div className="p-3 rounded-md bg-[#24262E] text-[#34D399] mb-3 border border-[#2D2F36]">
-                  <UploadCloud className="w-6 h-6" />
+                  <FileImage className="w-6 h-6" />
                 </div>
                 <div className="text-sm font-medium text-[#F3F4F6] mb-1">
                   {t('upload.browse')}
@@ -189,8 +205,16 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             ) : (
               <div className="bg-[#16171B] border border-[#2B2D35] rounded-md p-3.5 flex items-center justify-between">
                 <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="p-2 rounded bg-[#143827] text-[#34D399] shrink-0 border border-[#1E4D36]">
-                    <FileSpreadsheet className="w-5 h-5" />
+                  <div className="p-1 rounded bg-[#143827] text-[#34D399] shrink-0 border border-[#1E4D36] w-10 h-10 flex items-center justify-center overflow-hidden">
+                    {excelPreviewUrl ? (
+                      <img
+                        src={excelPreviewUrl}
+                        alt={excelFile.name}
+                        className="w-full h-full object-cover rounded"
+                      />
+                    ) : (
+                      <FileImage className="w-5 h-5" />
+                    )}
                   </div>
                   <div className="truncate">
                     <div className="flex items-center gap-1.5">
@@ -199,7 +223,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                       </span>
                     </div>
                     <div className="text-xs text-[#8E929E]">
-                      {formatFileSize(excelFile.size)} &bull; {t(isImageFile(excelFile) ? 'upload.tableImage' : 'upload.spreadsheet')}
+                      {formatFileSize(excelFile.size)} &bull; {t('upload.tableImage')}
                     </div>
                   </div>
                 </div>

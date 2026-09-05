@@ -9,12 +9,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SpreadsheetFileValidatorTest {
 
     @Test
-    void acceptsOnlyNativeSpreadsheetExtensions() {
-        assertTrue(SpreadsheetFileValidator.isSupported(
+    void rejectsNativeSpreadsheetExtensions() {
+        assertFalse(SpreadsheetFileValidator.isSupported(
                 new MockMultipartFile("excelFile", "inventory.xlsx", "application/octet-stream", new byte[]{1})));
-        assertTrue(SpreadsheetFileValidator.isSupported(
+        assertFalse(SpreadsheetFileValidator.isSupported(
                 new MockMultipartFile("excelFile", "inventory.xls", "application/octet-stream", new byte[]{1})));
-        assertTrue(SpreadsheetFileValidator.isSupported(
+        assertFalse(SpreadsheetFileValidator.isSupported(
                 new MockMultipartFile("excelFile", "inventory.csv", "text/csv", new byte[]{1})));
     }
 
@@ -34,5 +34,26 @@ class SpreadsheetFileValidatorTest {
     void acceptsImageMimeTypesEvenWhenTheFilenameLooksLikeExcel() {
         assertTrue(SpreadsheetFileValidator.isSupported(
                 new MockMultipartFile("excelFile", "inventory.xlsx", "image/png", new byte[]{1})));
+    }
+
+    @Test
+    void rejectsUnsupportedFileTypes() {
+        assertFalse(SpreadsheetFileValidator.isSupported(
+                new MockMultipartFile("excelFile", "inventory.txt", "text/plain", new byte[]{1})));
+        assertFalse(SpreadsheetFileValidator.isSupported(
+                new MockMultipartFile("excelFile", "inventory.pdf", "application/pdf", new byte[]{1})));
+        assertFalse(SpreadsheetFileValidator.isSupported(null));
+        assertFalse(SpreadsheetFileValidator.isSupported(
+                new MockMultipartFile("excelFile", "", "text/plain", new byte[0])));
+    }
+
+    @Test
+    void requireSupportedThrowsExpectedMessageForInvalidFile() {
+        MockMultipartFile invalidSpreadsheet = new MockMultipartFile("excelFile", "test.xlsx", "application/vnd.ms-excel", new byte[]{1});
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> SpreadsheetFileValidator.requireSupported(invalidSpreadsheet),
+                SpreadsheetFileValidator.ERROR_MESSAGE
+        );
     }
 }

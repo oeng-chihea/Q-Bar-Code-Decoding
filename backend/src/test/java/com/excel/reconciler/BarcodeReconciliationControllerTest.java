@@ -84,13 +84,8 @@ public class BarcodeReconciliationControllerTest {
                         .file(imgFile)
                         .param("columnName", "QR Barcode")
                         .param("highlightFullRow", "false"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalImages").value(1))
-                .andExpect(jsonPath("$.decodedImagesCount").value(1))
-                .andExpect(jsonPath("$.excelTotalRows").value(2))
-                .andExpect(jsonPath("$.matchedRowsCount").value(1))
-                .andExpect(jsonPath("$.matchedCodes[0]").value("SKU-9901"))
-                .andExpect(jsonPath("$.highlightedExcelBase64").isNotEmpty());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(SpreadsheetFileValidator.ERROR_MESSAGE));
     }
 
     @Test

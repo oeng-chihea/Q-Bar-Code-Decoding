@@ -40,22 +40,14 @@ public class ReconciliationService {
 
         SpreadsheetFileValidator.requireSupported(excelFile);
 
-        boolean excelTableImage = SpreadsheetFileValidator.isImage(excelFile);
-        byte[] workbookBytes;
-        String excelSourceType;
-        if (excelTableImage) {
-            ExcelImageExtractorService.ExtractedExcelData extracted =
-                    excelImageExtractorService.processExcelImage(excelFile);
-            workbookBytes = extracted.getExcelBytes();
-            if (workbookBytes == null || workbookBytes.length == 0) {
-                throw new IllegalArgumentException(
-                        "The uploaded Excel table image could not be converted into a spreadsheet.");
-            }
-            excelSourceType = "EXCEL_TABLE_IMAGE";
-        } else {
-            workbookBytes = excelFile.getBytes();
-            excelSourceType = "EXCEL_FILE";
+        ExcelImageExtractorService.ExtractedExcelData extracted =
+                excelImageExtractorService.processExcelImage(excelFile);
+        byte[] workbookBytes = extracted.getExcelBytes();
+        if (workbookBytes == null || workbookBytes.length == 0) {
+            throw new IllegalArgumentException(
+                    "The uploaded Excel table image could not be converted into a spreadsheet.");
         }
+        String excelSourceType = "EXCEL_TABLE_IMAGE";
 
         // 1. Decode all images in parallel
         List<BarcodeResult> scanResults = barcodeDecoderService.decodeBatch(imageFiles);
