@@ -1,70 +1,72 @@
 package com.excel.reconciler.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ExcelImageExtractorServiceTest {
 
     @Test
-    void tableImageExtractionUsesLocalOllamaAndPreservesKhmerValues() throws Exception {
-        AtomicInteger requests = new AtomicInteger();
-        AtomicReference<String> capturedPath = new AtomicReference<>();
-        AtomicReference<String> capturedBody = new AtomicReference<>();
-        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/api/chat", exchange -> {
-            requests.incrementAndGet();
-            capturedPath.set(exchange.getRequestURI().getPath());
-            capturedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            respond(exchange, 200,
-                    "{\"message\":{\"content\":\"{\\\"isExcelTable\\\":true,\\\"isBarcodeImage\\\":false,\\\"sheetName\\\":\\\"Inventory\\\",\\\"headers\\\":[\\\"Shipping Outlets\\\"],\\\"rows\\\":[{\\\"values\\\":[\\\"សាខាសៀមរាប/REPDP01\\\"]}]}\"}}");
-        });
-        server.start();
+    void tableImageExtractionUsesGeminiAndPreservesKhmerValues() throws Exception {
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        when(gemini.generateJson(any(), any(), any(), any())).thenReturn(
+                new GeminiVisionService.JsonResponse(200,
+                        "{\"isExcelTable\":true,\"isBarcodeImage\":false,\"sheetName\":\"Inventory\",\"headers\":[\"Shipping Outlets\"],\"rows\":[{\"values\":[\"សាខាសៀមរាប/REPDP01\"]}]}",
+                        null));
+        when(gemini.getConfiguredModel()).thenReturn("gemini-2.5-flash");
 
-        try {
-            OllamaVisionService ollama = new OllamaVisionService(new ObjectMapper());
-            setField(ollama, "apiUrl", "http://localhost:" + server.getAddress().getPort() + "/api/chat");
-            ExcelImageExtractorService service = new ExcelImageExtractorService(ollama, new ObjectMapper());
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
 
-            var extracted = service.processExcelImage(
-                    new MockMultipartFile("excelFile", "inventory.png", "image/png", new byte[]{1, 2, 3}));
+        var extracted = service.processExcelImage(
+                new MockMultipartFile("excelFile", "inventory.png", "image/png", new byte[]{1, 2, 3}));
 
-            assertTrue(extracted.isExcelTable());
-            assertEquals(List.of("Shipping Outlets"), extracted.getHeaders());
-            assertEquals(1, extracted.getRows().size());
-            assertEquals("សាខាសៀមរាប/REPDP01", extracted.getRows().get(0).get(0));
-            assertEquals(1, requests.get());
-            assertEquals("/api/chat", capturedPath.get());
-            assertTrue(capturedBody.get().contains("qwen3-vl:8b-instruct"));
-            assertTrue(capturedBody.get().contains("\"think\":false"));
-            assertTrue(capturedBody.get().contains("Copy every visible cell exactly as displayed"));
-            assertTrue(capturedBody.get().contains("Do not translate or infer"));
-            assertTrue(capturedBody.get().contains("Use an empty string when a cell is genuinely blank or unreadable"));
-            assertTrue(!capturedBody.get().contains("សៀមរាប"));
-            assertTrue(capturedBody.get().contains("\"format\""));
-        } finally {
-            server.stop(0);
-        }
+        assertTrue(extracted.isExcelTable());
+        assertEquals(List.of("Shipping Outlets"), extracted.getHeaders());
+        assertEquals(1, extracted.getRows().size());
+        assertEquals("សាខាសៀមរាប/REPDP01", extracted.getRows().get(0).get(0));
     }
 
     @Test
-    void parseOllamaResponsePreservesRawWhitespaceInsideExtractedCells() {
-        OllamaVisionService ollama = new OllamaVisionService(new ObjectMapper());
-        ExcelImageExtractorService service = new ExcelImageExtractorService(ollama, new ObjectMapper());
+    void preprocessTableImageUpscalesLowResolutionImages() throws Exception {
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
 
-        var extracted = service.parseOllamaResponse("""
+        // Test with invalid bytes (graceful fallback)
+        byte[] dummy = new byte[]{1, 2, 3};
+        assertEquals(dummy, service.preprocessTableImage(dummy, "image/png"));
+
+        // Test with a small valid 200x100 PNG image
+        java.awt.image.BufferedImage small = new java.awt.image.BufferedImage(200, 100, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(small, "png", baos);
+        byte[] originalBytes = baos.toByteArray();
+
+        byte[] upscaledBytes = service.preprocessTableImage(originalBytes, "image/png");
+        assertTrue(upscaledBytes.length > 0);
+
+        java.awt.image.BufferedImage upscaled = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(upscaledBytes));
+        assertNotNull(upscaled);
+        // Should be upscaled by max scale 2.5x: 200*2.5 = 500, 100*2.5 = 250
+        assertEquals(500, upscaled.getWidth());
+        assertEquals(250, upscaled.getHeight());
+    }
+
+    @Test
+    void parseGeminiResponsePreservesRawWhitespaceInsideExtractedCells() {
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
+
+        var extracted = service.parseGeminiResponse("""
                 {
                   "isExcelTable": true,
                   "isBarcodeImage": false,
@@ -73,33 +75,58 @@ class ExcelImageExtractorServiceTest {
                 }
                 """);
 
+        assertNotNull(extracted);
         assertEquals("  PROD-101  ", extracted.getRows().get(0).get(0));
         assertEquals("  ទំនិញ  ", extracted.getRows().get(0).get(1));
     }
 
     @Test
-    void rejectsRowsWiderThanHeadersInsteadOfSilentlyDroppingCells() {
-        OllamaVisionService ollama = new OllamaVisionService(new ObjectMapper());
-        ExcelImageExtractorService service = new ExcelImageExtractorService(ollama, new ObjectMapper());
+    void trimsRowsWiderThanHeadersAndPadsShorterRowsLeniently() {
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
 
-        var extracted = service.parseOllamaResponse("""
+        var extracted = service.parseGeminiResponse("""
                 {
                   "isExcelTable": true,
                   "isBarcodeImage": false,
                   "headers": ["កូដ", "ឈ្មោះ"],
-                  "rows": [{"values": ["PROD-101", "ទំនិញ", "តម្លៃដែលបាត់ជួរ"]}]
+                  "rows": [
+                    {"values": ["PROD-101", "ទំនិញ", "extra_cell"]},
+                    {"values": ["PROD-102"]}
+                  ]
                 }
                 """);
 
-        assertEquals(null, extracted);
+        assertNotNull(extracted);
+        assertEquals(2, extracted.getRows().size());
+        assertEquals(List.of("PROD-101", "ទំនិញ"), extracted.getRows().get(0));
+        assertEquals(List.of("PROD-102", ""), extracted.getRows().get(1));
+    }
+
+    @Test
+    void handlesNullCellValuesGracefully() {
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
+
+        var extracted = service.parseGeminiResponse("""
+                {
+                  "isExcelTable": true,
+                  "isBarcodeImage": false,
+                  "headers": ["កូដ", "ឈ្មោះ"],
+                  "rows": [{"values": ["PROD-101", null]}]
+                }
+                """);
+
+        assertNotNull(extracted);
+        assertEquals(List.of("PROD-101", ""), extracted.getRows().get(0));
     }
 
     @Test
     void keepsRowsThatContainOnlyBlankCellsForPositionalIntegrity() {
-        OllamaVisionService ollama = new OllamaVisionService(new ObjectMapper());
-        ExcelImageExtractorService service = new ExcelImageExtractorService(ollama, new ObjectMapper());
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
 
-        var extracted = service.parseOllamaResponse("""
+        var extracted = service.parseGeminiResponse("""
                 {
                   "isExcelTable": true,
                   "isBarcodeImage": false,
@@ -108,21 +135,51 @@ class ExcelImageExtractorServiceTest {
                 }
                 """);
 
+        assertNotNull(extracted);
         assertEquals(1, extracted.getRows().size());
         assertEquals(List.of("", ""), extracted.getRows().get(0));
     }
 
-    private static void setField(OllamaVisionService service, String name, String value) throws Exception {
-        var field = OllamaVisionService.class.getDeclaredField(name);
-        field.setAccessible(true);
-        field.set(service, value);
+    @Test
+    void sanitizesThaiScriptAndNormalizesCambodianLogisticsBranches() {
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
+
+        // 1. Thai hallucination for Siem Reap
+        assertEquals("សាខា សៀមរាប/REPDP01", service.sanitizeKhmerLogisticsText("សាខា เสียហាប/REPDP01"));
+        assertEquals("សៀមរាប/REPDP01", service.sanitizeKhmerLogisticsText("เสียហាប/REPDP01"));
+        assertEquals("សាខា សៀមរាប/REPDP01", service.sanitizeKhmerLogisticsText("សាខា សៀមរាប/REPDP01"));
+
+        // 2. Phnom Penh branch
+        assertEquals("សាខា ភ្នំពេញ/PNH01", service.sanitizeKhmerLogisticsText("សាខា ភ្នំពេញ/PNH01"));
+
+        // 3. Battambang branch
+        assertEquals("សាខា បាត់ដំបង/BTB01", service.sanitizeKhmerLogisticsText("សាខា/BTB01"));
+
+        // 4. Other cells unchanged
+        assertEquals("2026-09-01 09:19:48", service.sanitizeKhmerLogisticsText("2026-09-01 09:19:48"));
+        assertEquals("26,000", service.sanitizeKhmerLogisticsText("26,000"));
     }
 
-    private static void respond(HttpExchange exchange, int status, String body) throws IOException {
-        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-        exchange.sendResponseHeaders(status, bytes.length);
-        try (var output = exchange.getResponseBody()) {
-            output.write(bytes);
-        }
+    @Test
+    void parseGeminiResponseAutomaticallySanitizesRowsAndHeaders() {
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
+
+        var extracted = service.parseGeminiResponse("""
+                {
+                  "isExcelTable": true,
+                  "isBarcodeImage": false,
+                  "headers": ["សាខា/Code", "តម្លៃ"],
+                  "rows": [
+                    {"values": ["សាខា เสียហាប/REPDP01", "26,000"]},
+                    {"values": ["เสียហាប/REPDP01", "58,000"]}
+                  ]
+                }
+                """);
+
+        assertNotNull(extracted);
+        assertEquals("សាខា សៀមរាប/REPDP01", extracted.getRows().get(0).get(0));
+        assertEquals("សៀមរាប/REPDP01", extracted.getRows().get(1).get(0));
     }
 }

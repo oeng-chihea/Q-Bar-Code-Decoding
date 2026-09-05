@@ -6,6 +6,7 @@ export interface BarcodeResult {
   success: boolean;
   barcodeFormat?: string;
   errorMessage?: string;
+  matched?: boolean;
   previewUrl?: string;
 }
 

@@ -6,10 +6,11 @@ public class BarcodeResult {
     private String filename;
     private String decodedValue;
     private List<String> allExtractedValues;
-    private String decoderType; // "ZXING", "OLLAMA_AI", "FAILED"
+    private String decoderType; // "ZXING", "GEMINI_AI", "FAILED"
     private boolean success;
     private String barcodeFormat;
     private String errorMessage;
+    private Boolean matched;
 
     public BarcodeResult() {
     }
@@ -79,5 +80,13 @@ public class BarcodeResult {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
+    }
+
+    public Boolean isMatched() {
+        return matched;
+    }
+
+    public void setMatched(Boolean matched) {
+        this.matched = matched;
     }
 }

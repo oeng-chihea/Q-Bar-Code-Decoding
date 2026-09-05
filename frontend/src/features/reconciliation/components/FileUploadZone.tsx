@@ -13,7 +13,7 @@ import {
   X,
   Plus,
 } from 'lucide-react';
-import { isImageFile, validateExcelUpload } from '@/features/reconciliation/model/fileValidation';
+import { isImageFile, validateExcelUpload } from '@/features/reconciliation/helper/fileValidation';
 import { useTranslation } from '@/shared/i18n/i18n';
 import type { TranslationKey } from '@/shared/i18n/i18n';
 

@@ -46,14 +46,14 @@ public class BarcodeDecoderService {
     }
 
     private final ZXingDecoderService zxingDecoderService;
-    private final OllamaVisionService ollamaVisionService;
+    private final GeminiVisionService geminiVisionService;
     private final Executor imageDecoderExecutor;
 
     public BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
-                                 OllamaVisionService ollamaVisionService,
+                                 GeminiVisionService geminiVisionService,
                                  @Qualifier("imageDecoderExecutor") Executor imageDecoderExecutor) {
         this.zxingDecoderService = zxingDecoderService;
-        this.ollamaVisionService = ollamaVisionService;
+        this.geminiVisionService = geminiVisionService;
         this.imageDecoderExecutor = imageDecoderExecutor;
     }
 
@@ -73,7 +73,7 @@ public class BarcodeDecoderService {
 
         int localDecodedCount = (int) localScans.stream().filter(LocalScan::hasDecodedValues).count();
         int fallbackCount = localScans.size() - localDecodedCount;
-        log.info("ZXing decoded {}/{} barcode images; Ollama fallback required for {} images",
+        log.info("ZXing decoded {}/{} barcode images; Gemini fallback required for {} images",
                 localDecodedCount, localScans.size(), fallbackCount);
 
         // Preserve upload order while keeping only failed images for the AI stage.
@@ -90,25 +90,24 @@ public class BarcodeDecoderService {
             }
         }
 
-        // Batch only failed images. A small batch reduces HTTP/model overhead without loading
-        // all 40+ uploads into one large vision context.
+        // Batch only failed images with concurrent parallel execution.
         for (int start = 0; start < fallbackIndexes.size(); start += AI_FALLBACK_BATCH_SIZE) {
             int end = Math.min(start + AI_FALLBACK_BATCH_SIZE, fallbackIndexes.size());
             List<Integer> batchIndexes = fallbackIndexes.subList(start, end);
-            List<OllamaVisionService.BarcodeImage> batchImages = batchIndexes.stream()
+            List<GeminiVisionService.BarcodeImage> batchImages = batchIndexes.stream()
                     .map(index -> {
                         LocalScan scan = localScans.get(index);
-                        return new OllamaVisionService.BarcodeImage(scan.imageBytes, scan.contentType);
+                        return new GeminiVisionService.BarcodeImage(scan.imageBytes, scan.contentType);
                     })
                     .toList();
-            List<List<String>> batchValues = ollamaVisionService.extractBarcodesWithOllamaBatch(batchImages);
+            List<List<String>> batchValues = geminiVisionService.extractBarcodesParallel(batchImages);
 
             for (int i = 0; i < batchIndexes.size(); i++) {
                 int resultIndex = batchIndexes.get(i);
                 List<String> values = i < batchValues.size() && batchValues.get(i) != null
                         ? batchValues.get(i)
                         : Collections.emptyList();
-                results.set(resultIndex, buildOllamaResult(localScans.get(resultIndex), values));
+                results.set(resultIndex, buildGeminiResult(localScans.get(resultIndex), values));
             }
         }
         return results;
@@ -148,17 +147,17 @@ public class BarcodeDecoderService {
 
     private BarcodeResult buildLocalResult(LocalScan localScan) {
         String primary = pickPrimaryBarcode(localScan.decodedValues);
-        log.debug("ZXing decoded {} value(s) from {}; skipping Ollama fallback",
+        log.debug("ZXing decoded {} value(s) from {}; skipping Gemini fallback",
                 localScan.decodedValues.size(), localScan.filename);
         return new BarcodeResult(localScan.filename, primary, localScan.decodedValues,
                 "ZXING", true, localScan.barcodeFormat, null);
     }
 
-    private BarcodeResult buildOllamaResult(LocalScan localScan, List<String> ollamaValues) {
-        if (ollamaValues != null && !ollamaValues.isEmpty()) {
-            String primary = pickPrimaryBarcode(ollamaValues);
-            return new BarcodeResult(localScan.filename, primary, ollamaValues,
-                    "OLLAMA_AI", true, "AI_EXTRACTED", null);
+    private BarcodeResult buildGeminiResult(LocalScan localScan, List<String> geminiValues) {
+        if (geminiValues != null && !geminiValues.isEmpty()) {
+            String primary = pickPrimaryBarcode(geminiValues);
+            return new BarcodeResult(localScan.filename, primary, geminiValues,
+                    "GEMINI_AI", true, "AI_EXTRACTED", null);
         }
 
         return new BarcodeResult(localScan.filename, null, Collections.emptyList(),
@@ -173,21 +172,52 @@ public class BarcodeDecoderService {
     private String pickPrimaryBarcode(List<String> values) {
         if (values == null || values.isEmpty()) return null;
 
-        // 1. Look for numeric barcode (digits only, length >= 6)
+        // 1. Prioritize alphanumeric tracking/waybill barcodes (e.g. J01396943696)
         for (String v : values) {
-            if (v != null && v.matches("^\\d{6,18}$")) {
-                return v.trim();
+            if (v != null) {
+                String trimmed = v.trim();
+                if (trimmed.matches("^[A-Za-z]+[A-Za-z0-9_\\-]{7,25}$")) {
+                    return trimmed;
+                }
             }
         }
 
-        // 2. Look for any value containing mostly digits
+        // 2. Long numeric barcodes / waybills (length >= 10, e.g. 01400310465, EAN-13)
         for (String v : values) {
-            if (v != null && v.matches(".*\\d{6,}.*")) {
-                return v.trim();
+            if (v != null) {
+                String trimmed = v.trim();
+                if (trimmed.matches("^\\d{10,25}$")) {
+                    return trimmed;
+                }
             }
         }
 
-        // 3. Fallback to first value
+        // 3. Medium alphanumeric codes / SKUs (length >= 6, e.g. SKU-9901, PROD-101)
+        for (String v : values) {
+            if (v != null) {
+                String trimmed = v.trim();
+                if (trimmed.matches("^[A-Za-z0-9_\\-]{6,25}$") && !trimmed.matches("^\\d{1,9}$")) {
+                    return trimmed;
+                }
+            }
+        }
+
+        // 4. Shorter numeric barcodes (e.g. 6-9 digits like 00505718)
+        for (String v : values) {
+            if (v != null) {
+                String trimmed = v.trim();
+                if (trimmed.matches("^\\d{6,9}$")) {
+                    return trimmed;
+                }
+            }
+        }
+
+        // 5. Fallback to first non-empty value
+        for (String v : values) {
+            if (v != null && !v.trim().isEmpty()) {
+                return v.trim();
+            }
+        }
         return values.get(0).trim();
     }
 }

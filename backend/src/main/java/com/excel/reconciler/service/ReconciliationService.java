@@ -79,27 +79,51 @@ public class ReconciliationService {
             excelResult = excelHighlightService.highlightMatches(is, allDecodedCodes, columnName, highlightFullRow);
         }
 
-        // 4. Calculate unmatched codes
+        // 4. Align primary decoded value to matched code if present, and calculate unmatched codes
         Set<String> unmatchedCodes = new LinkedHashSet<>();
         Set<String> matchedCodesSet = excelResult.getMatchedCodes();
-        for (String decoded : allDecodedCodes) {
-            boolean matched = false;
-            if (matchedCodesSet.contains(decoded)) {
-                matched = true;
-            } else {
-                String normDecoded = ExcelHighlightService.normalize(decoded);
-                for (String m : matchedCodesSet) {
-                    String normM = ExcelHighlightService.normalize(m);
-                    if (normDecoded.equals(normM)
-                            || (normDecoded.length() == 11 && normM.length() == 12 && normM.endsWith(normDecoded))
-                            || (normDecoded.length() == 12 && normM.length() == 11 && normDecoded.endsWith(normM))) {
-                        matched = true;
-                        break;
+        int unmatchedImagesCount = 0;
+
+        for (BarcodeResult res : scanResults) {
+            if (!res.isSuccess()) {
+                res.setMatched(false);
+                unmatchedImagesCount++;
+                continue;
+            }
+
+            List<String> candidates = new ArrayList<>();
+            if (res.getDecodedValue() != null && !res.getDecodedValue().isBlank()) {
+                candidates.add(res.getDecodedValue().trim());
+            }
+            if (res.getAllExtractedValues() != null) {
+                for (String val : res.getAllExtractedValues()) {
+                    if (val != null && !val.isBlank() && !candidates.contains(val.trim())) {
+                        candidates.add(val.trim());
                     }
                 }
             }
-            if (!matched) {
-                unmatchedCodes.add(decoded);
+
+            String matchedCandidate = null;
+            for (String candidate : candidates) {
+                if (isCodeMatched(candidate, matchedCodesSet)) {
+                    matchedCandidate = candidate;
+                    break;
+                }
+            }
+
+            if (matchedCandidate != null) {
+                // Image matched an Excel row
+                res.setDecodedValue(matchedCandidate);
+                res.setMatched(true);
+            } else {
+                // Image did not match any row in Excel
+                res.setMatched(false);
+                unmatchedImagesCount++;
+                if (res.getDecodedValue() != null && !res.getDecodedValue().isBlank()) {
+                    unmatchedCodes.add(res.getDecodedValue().trim());
+                } else if (!candidates.isEmpty()) {
+                    unmatchedCodes.add(candidates.get(0));
+                }
             }
         }
 
@@ -116,7 +140,7 @@ public class ReconciliationService {
         response.setDecodedImagesCount(decodedImagesCount);
         response.setExcelTotalRows(excelResult.getTotalRows());
         response.setMatchedRowsCount(excelResult.getMatchedRowsCount());
-        response.setUnmatchedImagesCount(unmatchedCodes.size());
+        response.setUnmatchedImagesCount(unmatchedImagesCount);
         response.setMatchedColumnName(excelResult.getResolvedColumnName());
         response.setMatchedColumnConfidence(excelResult.getMatchedColumnConfidence());
         response.setIdentifierColumnIndexes(excelResult.getIdentifierColumnIndexes());
@@ -137,5 +161,24 @@ public class ReconciliationService {
                 excelResult.getActiveSheetName(), executionTimeMs);
 
         return response;
+    }
+
+    private boolean isCodeMatched(String decoded, Set<String> matchedCodesSet) {
+        if (decoded == null || decoded.isBlank() || matchedCodesSet == null || matchedCodesSet.isEmpty()) {
+            return false;
+        }
+        if (matchedCodesSet.contains(decoded)) {
+            return true;
+        }
+        String normDecoded = ExcelHighlightService.normalize(decoded);
+        for (String m : matchedCodesSet) {
+            String normM = ExcelHighlightService.normalize(m);
+            if (normDecoded.equals(normM)
+                    || (normDecoded.length() == 11 && normM.length() == 12 && normM.endsWith(normDecoded))
+                    || (normDecoded.length() == 12 && normM.length() == 11 && normDecoded.endsWith(normM))) {
+                return true;
+            }
+        }
+        return false;
     }
 }

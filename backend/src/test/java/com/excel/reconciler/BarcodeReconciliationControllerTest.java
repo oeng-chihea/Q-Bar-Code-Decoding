@@ -8,6 +8,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import com.excel.reconciler.util.SpreadsheetFileValidator;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -36,7 +37,7 @@ public class BarcodeReconciliationControllerTest {
     private MockMvc mockMvc;
 
     @MockBean
-    private com.excel.reconciler.service.OllamaVisionService ollamaVisionService;
+    private com.excel.reconciler.service.GeminiVisionService geminiVisionService;
 
     @Test
     public void testReconcileEndpoint() throws Exception {
@@ -90,9 +91,9 @@ public class BarcodeReconciliationControllerTest {
 
     @Test
     public void testReconcileExcelTableImage() throws Exception {
-        when(ollamaVisionService.generateJson(
+        when(geminiVisionService.generateJson(
                 any(byte[].class), eq("image/png"), anyString(), anyMap()))
-                .thenReturn(new com.excel.reconciler.service.OllamaVisionService.JsonResponse(
+                .thenReturn(new com.excel.reconciler.service.GeminiVisionService.JsonResponse(
                         200,
                         """
                         {
@@ -142,9 +143,9 @@ public class BarcodeReconciliationControllerTest {
                 imgOut.toByteArray()
         );
 
-        when(ollamaVisionService.generateJson(
+        when(geminiVisionService.generateJson(
                 any(byte[].class), eq("image/png"), anyString(), anyMap()))
-                .thenReturn(new com.excel.reconciler.service.OllamaVisionService.JsonResponse(
+                .thenReturn(new com.excel.reconciler.service.GeminiVisionService.JsonResponse(
                         200,
                         """
                         {
@@ -191,7 +192,7 @@ public class BarcodeReconciliationControllerTest {
     }
 
     @Test
-    public void testParseOllamaResponseMultiFormat() throws Exception {
+    public void testParseGeminiResponseMultiFormat() throws Exception {
         // Test 1: Object array with column keys
         String jsonObjects = """
                 {
@@ -205,7 +206,7 @@ public class BarcodeReconciliationControllerTest {
                     ]
                 }
                 """;
-        var data1 = excelImageExtractorService.parseOllamaResponse(jsonObjects);
+        var data1 = excelImageExtractorService.parseGeminiResponse(jsonObjects);
         org.junit.jupiter.api.Assertions.assertNotNull(data1);
         org.junit.jupiter.api.Assertions.assertEquals(3, data1.getHeaders().size());
         org.junit.jupiter.api.Assertions.assertEquals(2, data1.getRows().size());
@@ -224,7 +225,7 @@ public class BarcodeReconciliationControllerTest {
                     ]
                 }
                 """;
-        var data2 = excelImageExtractorService.parseOllamaResponse(jsonValues);
+        var data2 = excelImageExtractorService.parseGeminiResponse(jsonValues);
         org.junit.jupiter.api.Assertions.assertNotNull(data2);
         org.junit.jupiter.api.Assertions.assertEquals(2, data2.getRows().size());
 

@@ -44,7 +44,7 @@ public class ZXingDecoderService {
             }
 
             // Use a small, prioritized candidate set for real package photos. Every candidate
-            // is still part of the single ZXing stage; Ollama is only called if all candidates fail.
+            // is still part of the single ZXing stage; Gemini is only called if all candidates fail.
             List<BufferedImage> candidateImages = generateCandidateImages(original);
 
             for (BufferedImage candidate : candidateImages) {

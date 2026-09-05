@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   AlertTriangle,
@@ -6,6 +7,7 @@ import {
   Search,
   X,
   ScanLine,
+  ImageOff,
 } from 'lucide-react';
 import type { BarcodeResult } from '@/features/reconciliation/model/types';
 import { useTranslation } from '@/shared/i18n/i18n';
@@ -24,28 +26,11 @@ export const ImageScanGrid = ({
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<{
-    url: string;
+    url?: string;
     filename: string;
     barcode?: string;
     isFailed: boolean;
   } | null>(null);
-
-  // Map each file.name to an object URL for instant previewing
-  const fileUrlMap = useMemo(() => {
-    const map = new Map<string, string>();
-    if (imageFiles) {
-      for (const file of imageFiles) {
-        map.set(file.name, URL.createObjectURL(file));
-      }
-    }
-    return map;
-  }, [imageFiles]);
-
-  useEffect(() => {
-    return () => {
-      fileUrlMap.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [fileUrlMap]);
 
   // Close preview modal on Escape key
   useEffect(() => {
@@ -62,47 +47,85 @@ export const ImageScanGrid = ({
     };
   }, [selectedPreviewImage]);
 
+  const getFileForItem = (item: BarcodeResult, index: number): File | undefined => {
+    if (!imageFiles || imageFiles.length === 0) return undefined;
+
+    if (item.filename) {
+      const match = imageFiles.find((f) => {
+        if (f.name === item.filename) return true;
+        if (f.name.toLowerCase().trim() === item.filename.toLowerCase().trim()) return true;
+        const baseName = item.filename.split(/[/\\]/).pop();
+        if (baseName && (f.name === baseName || f.name.toLowerCase().trim() === baseName.toLowerCase().trim())) {
+          return true;
+        }
+        try {
+          const decoded = decodeURIComponent(item.filename);
+          if (f.name === decoded || f.name.toLowerCase().trim() === decoded.toLowerCase().trim()) {
+            return true;
+          }
+        } catch {
+          // ignore malformed URI components
+        }
+        return false;
+      });
+      if (match) return match;
+    }
+
+    // Fallback by 1:1 original position in scanResults
+    const originalIndex = scanResults.indexOf(item);
+    const targetIdx = originalIndex >= 0 ? originalIndex : index;
+    if (targetIdx >= 0 && targetIdx < imageFiles.length) {
+      return imageFiles[targetIdx];
+    }
+
+    return undefined;
+  };
+
   const normalize = (str: string) =>
     (str || '').trim().replace(/[\s_\-/:()!']+/g, '').toLowerCase();
 
   const matchedSet = new Set((matchedCodes || []).map(normalize));
 
-  // Extract all unmatched barcodes for this item
-  const getUnmatchedBarcodesForItem = (item: BarcodeResult): string[] => {
-    if (!item.success) return [];
-    const candidates = new Set<string>();
-    if (item.decodedValue && item.decodedValue.trim() !== '') {
-      candidates.add(item.decodedValue.trim());
+  // Determine if a scan result matched an Excel row
+  const isItemMatched = (item: BarcodeResult): boolean => {
+    if (item.matched !== undefined) {
+      return item.matched;
+    }
+    if (!item.success) {
+      return false;
+    }
+    if (item.decodedValue && matchedSet.has(normalize(item.decodedValue))) {
+      return true;
     }
     if (item.allExtractedValues) {
       for (const val of item.allExtractedValues) {
-        if (val && val.trim() !== '') {
-          candidates.add(val.trim());
+        if (val && matchedSet.has(normalize(val))) {
+          return true;
         }
       }
     }
-    const unmatchedList: string[] = [];
-    for (const c of candidates) {
-      if (!matchedSet.has(normalize(c))) {
-        unmatchedList.push(c);
-      }
-    }
-    return unmatchedList;
+    return false;
   };
 
   const isUnmatched = (result: BarcodeResult): boolean => {
-    if (!result.success) return true;
-    const unmatchedCodes = getUnmatchedBarcodesForItem(result);
-    if (unmatchedCodes.length > 0) return true;
-    const hasAnyCode =
-      (result.decodedValue != null && result.decodedValue.trim() !== '') ||
-      (result.allExtractedValues != null &&
-        result.allExtractedValues.some((v) => v != null && v.trim() !== ''));
-    return !hasAnyCode;
+    return !isItemMatched(result);
   };
 
-  // ONLY keep unmatched items (unmatched barcodes or failed decodes)
+  // ONLY keep truly unmatched items (did not match any row in Excel or failed decodes)
   const unmatchedResults = scanResults.filter(isUnmatched);
+
+  const getDisplayBarcode = (item: BarcodeResult): string | undefined => {
+    if (item.decodedValue && item.decodedValue.trim() !== '') {
+      return item.decodedValue.trim();
+    }
+    if (item.allExtractedValues && item.allExtractedValues.length > 0) {
+      const firstValid = item.allExtractedValues.find(
+        (v) => v && v.trim() !== ''
+      );
+      if (firstValid) return firstValid.trim();
+    }
+    return undefined;
+  };
 
   const filteredResults = unmatchedResults.filter((item) => {
     if (searchQuery.trim()) {
@@ -158,20 +181,47 @@ export const ImageScanGrid = ({
           </div>
         ) : (
           filteredResults.map((item, index) => {
-            const itemUnmatchedCodes = getUnmatchedBarcodesForItem(item);
-            const isFailed =
-              !item.success ||
-              (itemUnmatchedCodes.length === 0 && !item.decodedValue);
-            const barcodeDisplay =
-              itemUnmatchedCodes.length > 0
-                ? itemUnmatchedCodes.join(', ')
-                : item.decodedValue || undefined;
-            const previewUrl = fileUrlMap.get(item.filename);
+            const barcodeDisplay = getDisplayBarcode(item);
+            const isFailed = !item.success || !barcodeDisplay;
 
-            const handleCardClick = () => {
-              if (previewUrl) {
+            const onCardClick = () => {
+              const file = getFileForItem(item, index);
+
+              if (file) {
+                // 1. Read as permanent Data URL (completely immune to blob revocation / StrictMode)
+                const reader = new FileReader();
+                reader.onload = () => {
+                  if (typeof reader.result === 'string') {
+                    setSelectedPreviewImage({
+                      url: reader.result,
+                      filename: item.filename,
+                      barcode: barcodeDisplay,
+                      isFailed,
+                    });
+                  }
+                };
+                reader.onerror = () => {
+                  const freshUrl = URL.createObjectURL(file);
+                  setSelectedPreviewImage({
+                    url: freshUrl,
+                    filename: item.filename,
+                    barcode: barcodeDisplay,
+                    isFailed,
+                  });
+                };
+                reader.readAsDataURL(file);
+
+                // Immediate preview with a fresh Object URL
+                const instantUrl = URL.createObjectURL(file);
                 setSelectedPreviewImage({
-                  url: previewUrl,
+                  url: instantUrl,
+                  filename: item.filename,
+                  barcode: barcodeDisplay,
+                  isFailed,
+                });
+              } else {
+                setSelectedPreviewImage({
+                  url: item.previewUrl,
                   filename: item.filename,
                   barcode: barcodeDisplay,
                   isFailed,
@@ -182,13 +232,13 @@ export const ImageScanGrid = ({
             return (
               <div
                 key={index}
-                onClick={handleCardClick}
+                onClick={onCardClick}
                 className={`p-4 rounded-md border shadow-sm flex flex-col justify-between transition cursor-pointer group ${
                   isFailed
                     ? 'bg-[#291B17]/40 border-[#5C2B1D] hover:border-[#F59E0B]/80 hover:bg-[#331F19]/50'
                     : 'bg-[#23171A]/40 border-[#5C1D24] hover:border-[#FB7185]/80 hover:bg-[#2F191E]/50'
                 }`}
-                title={previewUrl ? t('unmatched.preview') : item.filename}
+                title={t('unmatched.preview')}
               >
                 <div>
                   {/* Top Bar with Tag */}
@@ -210,18 +260,15 @@ export const ImageScanGrid = ({
                     )}
                   </div>
 
-                  {/* Barcode Number(s) Display */}
+                  {/* Barcode Number Display */}
                   <div className="space-y-1.5 mb-1">
-                    {itemUnmatchedCodes.length > 0 ? (
-                      itemUnmatchedCodes.map((code, cIdx) => (
-                        <div
-                          key={cIdx}
-                          className="font-mono text-base font-bold text-white tracking-wide truncate"
-                          title={code}
-                        >
-                          {code}
-                        </div>
-                      ))
+                    {barcodeDisplay ? (
+                      <div
+                        className="font-mono text-base font-bold text-white tracking-wide truncate"
+                        title={barcodeDisplay}
+                      >
+                        {barcodeDisplay}
+                      </div>
                     ) : (
                       <div className="text-xs text-[#F59E0B]/90 italic truncate">
                         {item.errorMessage || t('unmatched.noBarcodeTag')}
@@ -230,17 +277,23 @@ export const ImageScanGrid = ({
                   </div>
                 </div>
 
-                {/* Footer with Filename and Click-to-preview icon */}
+                {/* Footer with Filename and Click-to-preview button */}
                 <div className="text-[11px] text-[#737887] flex items-center justify-between pt-2.5 border-t border-[#26272E] mt-3">
-                  <span className="truncate max-w-[120px]" title={item.filename}>
+                  <span className="truncate max-w-[110px]" title={item.filename}>
                     {item.filename}
                   </span>
-                  {previewUrl && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-[#A0A5B5] group-hover:text-[#A0E3E2] transition">
-                      <Eye className="w-3 h-3" />
-                      {t('unmatched.preview')}
-                    </span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCardClick();
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] text-[#A0A5B5] group-hover:text-[#A0E3E2] hover:text-[#A0E3E2] transition cursor-pointer"
+                    title={t('unmatched.preview')}
+                  >
+                    <Eye className="w-3 h-3" />
+                    {t('unmatched.preview')}
+                  </button>
                 </div>
               </div>
             );
@@ -248,76 +301,110 @@ export const ImageScanGrid = ({
         )}
       </div>
 
-      {/* Click-to-Preview Modal Overlay */}
-      {selectedPreviewImage && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setSelectedPreviewImage(null)}
-        >
+      {/* Click-to-Preview Modal Overlay rendered at document.body */}
+      {typeof document !== 'undefined' &&
+        selectedPreviewImage &&
+        createPortal(
           <div
-            className="bg-[#1C1D22] border border-[#3D404B] rounded-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setSelectedPreviewImage(null)}
           >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#26272E] bg-[#16171B]">
-              <div className="flex items-center gap-2 overflow-hidden">
-                <Eye className="w-4 h-4 text-[#A0E3E2] shrink-0" />
-                <div className="truncate">
-                  <h4 className="text-sm font-semibold text-white m-0">
-                    {t('unmatched.previewTitle')}
-                  </h4>
-                  <p className="text-[11px] text-[#8E929E] m-0 truncate">
-                    {selectedPreviewImage.filename}
-                  </p>
+            <div
+              className="bg-[#1C1D22] border border-[#3D404B] rounded-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#26272E] bg-[#16171B]">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <Eye className="w-4 h-4 text-[#A0E3E2] shrink-0" />
+                  <div className="truncate">
+                    <h4 className="text-sm font-semibold text-white m-0">
+                      {t('unmatched.previewTitle')}
+                    </h4>
+                    <p className="text-[11px] text-[#8E929E] m-0 truncate">
+                      {selectedPreviewImage.filename}
+                    </p>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedPreviewImage(null)}
+                  className="p-1.5 rounded-md text-[#8E929E] hover:text-white hover:bg-[#2B2D35] transition cursor-pointer ml-3 shrink-0"
+                  title={t('unmatched.close')}
+                  aria-label={t('unmatched.close')}
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedPreviewImage(null)}
-                className="p-1.5 rounded-md text-[#8E929E] hover:text-white hover:bg-[#2B2D35] transition cursor-pointer ml-3 shrink-0"
-                title={t('unmatched.close')}
-                aria-label={t('unmatched.close')}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Image View */}
-            <div className="p-4 overflow-y-auto flex-1 flex items-center justify-center bg-[#121316]">
-              <img
-                src={selectedPreviewImage.url}
-                alt={selectedPreviewImage.filename}
-                className="max-h-[60vh] max-w-full object-contain rounded-lg border border-[#2B2D35] shadow-md"
-              />
-            </div>
-
-            {/* Modal Footer with Barcode Badge */}
-            <div className="px-5 py-3 border-t border-[#26272E] bg-[#16171B] flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[#8E929E]">បាកូដ:</span>
-                {selectedPreviewImage.barcode ? (
-                  <span className="font-mono text-sm font-bold text-[#FB7185] bg-[#461B21] px-2.5 py-0.5 rounded border border-[#5C1D24]">
-                    {selectedPreviewImage.barcode}
-                  </span>
+              {/* Modal Image View */}
+              <div className="p-4 overflow-y-auto flex-1 flex items-center justify-center bg-[#121316] min-h-[260px]">
+                {selectedPreviewImage.url ? (
+                  <img
+                    src={selectedPreviewImage.url}
+                    alt={selectedPreviewImage.filename}
+                    className="max-h-[60vh] max-w-full object-contain rounded-lg border border-[#2B2D35] shadow-md"
+                    onError={() => {
+                      const currentFilename = selectedPreviewImage.filename;
+                      const file = imageFiles?.find(
+                        (f) =>
+                          f.name === currentFilename ||
+                          f.name.toLowerCase().trim() ===
+                            currentFilename.toLowerCase().trim()
+                      );
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          if (typeof reader.result === 'string') {
+                            setSelectedPreviewImage((prev) =>
+                              prev
+                                ? { ...prev, url: reader.result as string }
+                                : null
+                            );
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
                 ) : (
-                  <span className="text-xs text-[#F59E0B] bg-[#3D2115] px-2.5 py-0.5 rounded border border-[#5C2B1D]">
-                    {t('unmatched.noBarcodeTag')}
-                  </span>
+                  <div className="text-center py-10 px-4 space-y-2 text-[#8E929E]">
+                    <ImageOff className="w-10 h-10 mx-auto opacity-50 text-[#8E929E]" />
+                    <p className="text-xs m-0">
+                      {selectedPreviewImage.filename}
+                    </p>
+                  </div>
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedPreviewImage(null)}
-                className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#24262E] text-[#D1D5DB] hover:bg-[#2D2F38] hover:text-white transition cursor-pointer"
-              >
-                {t('unmatched.close')}
-              </button>
+              {/* Modal Footer with Barcode Badge */}
+              <div className="px-5 py-3 border-t border-[#26272E] bg-[#16171B] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[#8E929E]">បាកូដ:</span>
+                  {selectedPreviewImage.barcode ? (
+                    <span className="font-mono text-sm font-bold text-[#FB7185] bg-[#461B21] px-2.5 py-0.5 rounded border border-[#5C1D24]">
+                      {selectedPreviewImage.barcode}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-[#F59E0B] bg-[#3D2115] px-2.5 py-0.5 rounded border border-[#5C2B1D]">
+                      {t('unmatched.noBarcodeTag')}
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedPreviewImage(null)}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#24262E] text-[#D1D5DB] hover:bg-[#2D2F38] hover:text-white transition cursor-pointer"
+                >
+                  {t('unmatched.close')}
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
