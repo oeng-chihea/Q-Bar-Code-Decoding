@@ -59,6 +59,6 @@ class GeminiVisionServiceTest {
     @Test
     void configuredModelDefaultsToGeminiFlashLite() {
         GeminiVisionService service = new GeminiVisionService(new ObjectMapper(), Runnable::run);
-        assertEquals("gemini-2.0-flash-lite", service.getConfiguredModel());
+        assertEquals("gemini-flash-lite-latest", service.getConfiguredModel());
     }
 }

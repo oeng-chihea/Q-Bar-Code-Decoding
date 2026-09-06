@@ -30,6 +30,9 @@ public class ExcelImageExtractorService {
     public static final String BARCODE_REJECTION_MESSAGE =
             "Barcode images are not supported in the Excel section. The Excel upload supports spreadsheet files (.xlsx, .xls, .csv) or images of an Excel table (.png, .jpg, .jpeg, .webp). Please upload barcode images in Step 2.";
 
+    public static final String NOT_AN_EXCEL_TABLE_MESSAGE =
+            "The uploaded image in Step 1 is not an Excel table or spreadsheet. Only images of an Excel table (.png, .jpg, .jpeg, .webp) containing tabular rows and columns are supported. Please upload an Excel table image in Step 1.";
+
     public static class ExtractedExcelData {
         private final boolean isExcelTable;
         private final boolean isBarcodeImage;
@@ -142,10 +145,11 @@ public class ExcelImageExtractorService {
                 throw new IllegalArgumentException(aiResult.data.getRejectionReason() != null
                         ? aiResult.data.getRejectionReason() : BARCODE_REJECTION_MESSAGE);
             }
-            if (!aiResult.data.isExcelTable()) {
-                throw new IllegalArgumentException(aiResult.data.getRejectionReason() != null
+            if (!aiResult.data.isExcelTable() || aiResult.data.getRows().isEmpty()) {
+                log.info("Gemini classified image {} as not an Excel table or missing data rows, rejecting", filename);
+                throw new IllegalArgumentException(aiResult.data.getRejectionReason() != null && !aiResult.data.getRejectionReason().isBlank()
                         ? aiResult.data.getRejectionReason()
-                        : "The uploaded image does not appear to be an Excel table or spreadsheet. Please upload an Excel file (.xlsx, .xls) or an image of an Excel spreadsheet.");
+                        : NOT_AN_EXCEL_TABLE_MESSAGE);
             }
             return aiResult.data;
         }
@@ -232,8 +236,11 @@ public class ExcelImageExtractorService {
                 8. Code & Number Fidelity: Preserve alphanumeric codes, outlet codes, waybills, IDs, dates, numbers, currency symbols, and slashes exactly as printed. Do not translate or alter codes.
                 9. Preserve blank cells: Use an empty string "" for blank cells. Include every row even if some cells are blank.
                 10. Maintain exact column alignment for each cell according to the headers.
-                11. If this is an Excel sheet, logistics report, inventory list, or data table, set "isExcelTable" to true and "isBarcodeImage" to false.
-                12. Only if this is purely a barcode sticker, product box with no table, or shipping label photo, set "isExcelTable" to false and "isBarcodeImage" to true.
+                11. STRICT VERIFICATION OF EXCEL TABLE:
+                   - Inspect whether the image actually depicts an Excel sheet, spreadsheet grid, logistics report table, inventory list, or data table with columns and rows.
+                   - If YES (it contains a clear table/spreadsheet): set "isExcelTable" to true and "isBarcodeImage" to false.
+                   - If this is a barcode sticker, shipping waybill label, product box with barcode, or single package photo with no table: set "isExcelTable" to false, "isBarcodeImage" to true, set "headers" to [], set "rows" to [], and set "rejectionReason" to "Barcode images are not supported in the Excel section. Please upload barcode images in Step 2."
+                   - If this is ANY OTHER IMAGE that is NOT an Excel table or spreadsheet (e.g. random photo, object, landscape, selfie, document without tabular grid, or receipt without rows/columns): set "isExcelTable" to false, "isBarcodeImage" to false, set "headers" to [], set "rows" to [], and set "rejectionReason" to "The uploaded image in Step 1 is not an Excel table or spreadsheet. Only images of an Excel table (.png, .jpg, .jpeg, .webp) containing tabular rows and columns are supported."
                 """;
 
         String systemInstruction = """
@@ -357,16 +364,23 @@ public class ExcelImageExtractorService {
                 }
             }
 
-            // CRITICAL OVERRIDE: If table headers or rows were extracted, it is definitely an Excel table!
-            boolean hasTableData = (!headers.isEmpty() && headers.size() >= 2) || !rows.isEmpty();
-            if (hasTableData) {
+            // CRITICAL OVERRIDE: Table MUST have rows to be considered a valid Excel table for reconciliation
+            boolean hasTableData = (!headers.isEmpty() && headers.size() >= 1) && !rows.isEmpty();
+            if (hasTableData && !isBarcodeImage) {
                 isExcelTable = true;
-                isBarcodeImage = false;
+            } else if (rows.isEmpty()) {
+                isExcelTable = false;
             }
 
-            if (isBarcodeImage || !isExcelTable) {
+            if (isBarcodeImage) {
                 return new ExtractedExcelData(false, true,
                         rejection != null && !rejection.isBlank() ? rejection : BARCODE_REJECTION_MESSAGE,
+                        null, Collections.emptyList(), Collections.emptyList(), null);
+            }
+
+            if (!isExcelTable || rows.isEmpty()) {
+                return new ExtractedExcelData(false, false,
+                        rejection != null && !rejection.isBlank() ? rejection : NOT_AN_EXCEL_TABLE_MESSAGE,
                         null, Collections.emptyList(), Collections.emptyList(), null);
             }
 

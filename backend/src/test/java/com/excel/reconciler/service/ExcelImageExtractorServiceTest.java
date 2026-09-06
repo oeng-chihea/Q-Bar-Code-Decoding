@@ -182,4 +182,44 @@ class ExcelImageExtractorServiceTest {
         assertEquals("សាខា សៀមរាប/REPDP01", extracted.getRows().get(0).get(0));
         assertEquals("សៀមរាប/REPDP01", extracted.getRows().get(1).get(0));
     }
+
+    @Test
+    void rejectsNonExcelTableImage() {
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
+
+        var extracted = service.parseGeminiResponse("""
+                {
+                  "isExcelTable": false,
+                  "isBarcodeImage": false,
+                  "rejectionReason": "The uploaded image is not an Excel table or spreadsheet.",
+                  "headers": [],
+                  "rows": []
+                }
+                """);
+
+        assertNotNull(extracted);
+        assertFalse(extracted.isExcelTable());
+        assertFalse(extracted.isBarcodeImage());
+        assertTrue(extracted.getRejectionReason().contains("not an Excel table"));
+    }
+
+    @Test
+    void rejectsTableWithZeroRows() {
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
+
+        var extracted = service.parseGeminiResponse("""
+                {
+                  "isExcelTable": true,
+                  "isBarcodeImage": false,
+                  "headers": ["Header1", "Header2"],
+                  "rows": []
+                }
+                """);
+
+        assertNotNull(extracted);
+        assertFalse(extracted.isExcelTable());
+        assertTrue(extracted.getRejectionReason().contains("not an Excel table"));
+    }
 }

@@ -37,6 +37,7 @@ const khmer = {
   'upload.processing': 'កំពុងដំណើរការ និងផ្ទៀងផ្ទាត់...',
   'upload.progress': 'ដំណើរការបញ្ចូល: {{percent}}%',
   'errors.unsupported': 'ទម្រង់ឯកសារមិនគាំទ្រ។ សូមបញ្ចូលរូបភាពតារាង Excel (.png, .jpg, .jpeg, .webp) ប៉ុណ្ណោះ។',
+  'errors.notExcelTable': 'រូបភាពដែលបានបញ្ចូលនៅជំហាន 1 មិនមែនជាតារាង Excel ទេ។ សូមបញ្ចូលតែរូបភាពតារាង Excel (.png, .jpg, .jpeg, .webp) ដែលមានទិន្នន័យតារាងប៉ុណ្ណោះ។',
   'errors.barcode': 'មិនអាចប្រើរូបភាពបាកូដជាតារាង Excel បានទេ។ សូមបញ្ចូលរូបភាពតារាង Excel នៅជំហាន 1 និងរូបភាពបាកូដនៅជំហាន 2។',
   'errors.excelRequired': 'ត្រូវការរូបភាពតារាង Excel (.png, .jpg, .jpeg, .webp)។',
   'errors.invalidResponse': 'ទម្រង់ចម្លើយពីម៉ាស៊ីនមេមិនត្រឹមត្រូវ',
@@ -100,6 +101,7 @@ export function translate(
 export function localizeError(message: string): string {
   const normalized = message.trim();
   if (normalized.includes('Barcode images are not supported in the Excel section')) return translate('errors.barcode');
+  if (normalized.includes('not an Excel table') || normalized.includes('not appear to be an Excel table') || normalized.includes('does not contain a valid Excel table')) return translate('errors.notExcelTable');
   if (normalized.includes('Only Excel spreadsheet files') || normalized.includes('images of an Excel table')) return translate('errors.unsupported');
   if (normalized.includes('Excel spreadsheet or table image file is required')) return translate('errors.excelRequired');
   if (normalized.includes('Unsupported file format')) return translate('errors.unsupported');

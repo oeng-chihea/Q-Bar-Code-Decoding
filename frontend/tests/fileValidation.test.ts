@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateExcelUpload } from '../src/features/reconciliation/model/fileValidation.ts';
+import { validateExcelUpload } from '../src/features/reconciliation/helper/fileValidation.ts';
 
 test('rejects native spreadsheet files (.xlsx, .xls, .csv) for the Excel upload', () => {
   for (const [name, type] of [

@@ -43,9 +43,8 @@ public class ReconciliationService {
         ExcelImageExtractorService.ExtractedExcelData extracted =
                 excelImageExtractorService.processExcelImage(excelFile);
         byte[] workbookBytes = extracted.getExcelBytes();
-        if (workbookBytes == null || workbookBytes.length == 0) {
-            throw new IllegalArgumentException(
-                    "The uploaded Excel table image could not be converted into a spreadsheet.");
+        if (workbookBytes == null || workbookBytes.length == 0 || extracted.getRows() == null || extracted.getRows().isEmpty()) {
+            throw new IllegalArgumentException(ExcelImageExtractorService.NOT_AN_EXCEL_TABLE_MESSAGE);
         }
         String excelSourceType = "EXCEL_TABLE_IMAGE";
 
