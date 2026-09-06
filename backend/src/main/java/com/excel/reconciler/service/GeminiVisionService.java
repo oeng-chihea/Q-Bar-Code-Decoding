@@ -27,13 +27,13 @@ import java.util.concurrent.Executor;
 @Service
 public class GeminiVisionService {
     private static final Logger log = LoggerFactory.getLogger(GeminiVisionService.class);
-    private static final String DEFAULT_MODEL = "gemini-flash-latest";
+    private static final String DEFAULT_MODEL = "gemini-2.0-flash-lite";
     private static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
     @Value("${gemini.api.key:}")
     private String apiKey;
 
-    @Value("${gemini.api.model:gemini-flash-latest}")
+    @Value("${gemini.api.model:gemini-2.0-flash-lite}")
     private String model = DEFAULT_MODEL;
 
     @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models}")
@@ -203,11 +203,14 @@ public class GeminiVisionService {
             String configured = getConfiguredModel();
             List<String> modelsToTry = new ArrayList<>();
             modelsToTry.add(configured);
-            if (!modelsToTry.contains("gemini-flash-latest")) {
-                modelsToTry.add("gemini-flash-latest");
+            if (!modelsToTry.contains("gemini-2.0-flash-lite")) {
+                modelsToTry.add("gemini-2.0-flash-lite");
             }
             if (!modelsToTry.contains("gemini-flash-lite-latest")) {
                 modelsToTry.add("gemini-flash-lite-latest");
+            }
+            if (!modelsToTry.contains("gemini-2.0-flash")) {
+                modelsToTry.add("gemini-2.0-flash");
             }
 
             HttpResponse<String> response = null;
