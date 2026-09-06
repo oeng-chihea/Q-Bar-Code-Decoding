@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: ${PORT:8080}
 
 spring:
   application:
@@ -11,7 +11,11 @@ spring:
 
 gemini:
   api:
-    key: ${GEMINI_API_KEY:AIzaSyD6HUbhja1YzZC-JIUnQtXqQMx8qreIpS8}
+    key: ${GEMINI_API_KEY:}
     model: ${GEMINI_API_MODEL:gemini-flash-latest}
     url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta/models}
 
+
+app:
+  cors:
+    allowed-origins: "${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000}"
