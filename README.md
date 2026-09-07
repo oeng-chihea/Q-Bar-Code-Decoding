@@ -1,202 +1,343 @@
-# 📦 Excel Barcode & QR Code Reconciler with Local Ollama AI
+# Excel Barcode and QR Code Reconciler
 
-An enterprise-grade, full-stack web application designed to reconcile batches of warehouse barcode and QR code product photos against multi-sheet Excel inventory spreadsheets. Matched items are highlighted in **RED** and exported back into a modified `.xlsx` workbook with live preview, analytics, and a Khmer-only UI.
+A full-stack application that compares barcode and QR-code images with an Excel spreadsheet or table image, highlights matching rows, and produces a downloadable Excel workbook.
 
----
+The application uses:
 
-## 🏗️ 3-Layer Intelligent System Architecture
+- React and Vite for the frontend
+- Spring Boot for the REST API and background worker
+- CloudAMQP RabbitMQ for asynchronous job delivery
+- ZXing for local barcode and QR-code decoding
+- Gemini for table extraction and barcode fallback
+- Apache POI for Excel workbook processing and highlighting
 
-The application employs a **3-Layer Precision Barcode Pipeline** focused strictly on universal optical barcode numbers (UPC, EAN, Code 128, QR) combined with mathematical GS1 checksum verification and spreadsheet reconciliation.
+## Architecture overview
 
-```mermaid
-graph TD
-    %% Define Styles
-    classDef client fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#ffffff;
-    classDef backend fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#ffffff;
-    classDef layer1 fill:#311042,stroke:#c084fc,stroke-width:2px,color:#ffffff;
-    classDef layer2 fill:#4a044e,stroke:#f43f5e,stroke-width:2px,color:#ffffff;
-    classDef layer3 fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff;
-    classDef result fill:#881337,stroke:#f43f5e,stroke-width:3px,color:#ffffff;
+~~~mermaid
+flowchart LR
+    frontend[Frontend Web App]
+    api[Spring Boot API]
+    exchange[CloudAMQP Exchange]
+    queue[barcode.reconciliation.queue]
+    listener[Spring Boot RabbitMQ Listener]
+    pipeline[ReconciliationService]
+    storage[Runtime File Storage]
+    gemini[Gemini API]
 
-    %% PRESENTATION TIER
-    subgraph ClientLayer ["1️⃣ Presentation Tier (React 19 + Vite)"]
-        UI_Upload["📤 Dual Dropzone\n• Step 1: Excel File or Table Image (.xlsx, .xls, .csv, .png, .jpg, .jpeg, .webp)\n• Step 2: Barcode / QR Image Batch"]:::client
-        UI_Preview["📊 Live Spreadsheet Preview\n(Interactive Red Row Highlighting)"]:::client
-        UI_Cards["🏷️ Matched Barcodes Gallery\n(Numeric Barcode Codes)"]:::client
-        UI_Download["📥 1-Click .xlsx Downloader"]:::client
-    end
+    frontend -->|Upload, status, result, and download| api
+    api -->|Save uploaded files| storage
+    api -.->|Publish JSON job| exchange
+    exchange -.->|Route by routing key| queue
+    queue -.->|Deliver job| listener
+    listener -->|Load files and call service| pipeline
+    pipeline -->|Read and write files| storage
+    pipeline -.->|Table extraction and barcode fallback| gemini
+~~~
 
-    %% BACKEND TIER
-    subgraph BackendLayer ["2️⃣ Orchestration Tier (Spring Boot 3)"]
-        API_Ctrl["🎯 BarcodeReconciliationController\nPOST /api/v1/barcodes/reconcile"]:::backend
-        API_Orch["⚙️ ReconciliationService\n(Parallel CompletableFuture Workers)"]:::backend
-    end
+RabbitMQ transports and waits with the JSON job. It does not read Excel files, decode images, call Gemini, or create the final workbook. Those operations run inside Spring Boot.
 
-    %% LAYER 1: STRICT BARCODE AI OCR
-    subgraph Layer1 ["3️⃣ Layer 1: Strict Optical Barcode Extraction"]
-        Ollama_AI["🧠 Local Ollama Qwen3-VL 8B Vision\n• JSON-constrained barcode fallback\n• Pure Numeric 1D Barcodes & QR Codes\n• Multi-Item Sheet Scanning"]:::layer1
-    end
+## End-to-end processing flow
 
-    %% LAYER 2: MATHEMATICAL GS1 VALIDATOR
-    subgraph Layer2 ["4️⃣ Layer 2: Mathematical GS1 Checksum Verification"]
-        GS1_Validator["📐 BarcodeValidator (Java Engine)\n• Modulo-10 Checksum Algorithm\n• Validates UPC-A (12d), EAN-13 (13d), EAN-8 (8d)\n• Discards invalid or corrupted numbers"]:::layer2
-    end
+~~~text
+Frontend
+  │
+  │ POST /api/v1/barcodes/reconcile
+  │
+  │ Multipart request:
+  │ ├─ Excel/table file
+  │ ├─ Barcode images
+  │ ├─ columnName
+  │ └─ highlightFullRow
+  ▼
+BarcodeReconciliationController
+  │
+  ├─ Validates the uploaded files
+  ├─ Creates a unique reconciliationId
+  ├─ Creates the initial QUEUED status
+  ├─ Saves files to:
+  │  runtime/reconciliations/<reconciliationId>/
+  │  ├─ excel/
+  │  └─ images/
+  │
+  ├─ Creates BarcodeReconciliationRequest:
+  │  ├─ reconciliationId
+  │  ├─ excelFilePath
+  │  ├─ imageFilePaths
+  │  ├─ columnName
+  │  └─ highlightFullRow
+  │
+  └─ Returns HTTP 202 Accepted with the job ID
+     and status URL
+  ▼
+BarcodeReconciliationPublisher
+  │
+  └─ Converts the request object to JSON
+     and publishes it through RabbitTemplate
+  ▼
+CloudAMQP RabbitMQ
+  │
+  ├─ Exchange:
+  │  barcode.reconciliation.exchange
+  │
+  ├─ Routing key:
+  │  barcode.reconciliation.requested
+  │
+  └─ Queue:
+     barcode.reconciliation.queue
+     │
+     └─ Stores the JSON job until a listener receives it
+        ▼
+BarcodeReconciliationListener
+  │
+  ├─ Receives BarcodeReconciliationRequest
+  ├─ Changes status to PROCESSING
+  ├─ Loads the Excel file from excelFilePath
+  ├─ Loads all images from imageFilePaths
+  └─ Calls ReconciliationService
+     ▼
+ReconciliationService
+  │
+  ├─ ExcelImageExtractorService
+  │  └─ Extracts and validates the Excel/table data
+  │
+  ├─ BarcodeDecoderService
+  │  ├─ Sends images to ZXing
+  │  ├─ Decodes images in parallel
+  │  └─ Sends failed scans to Gemini fallback
+  │
+  ├─ ExcelHighlightService
+  │  ├─ Matches decoded barcodes with Excel rows
+  │  └─ Highlights matching rows
+  │
+  └─ Builds ReconciliationResponse
+     ├─ Barcode scan results
+     ├─ Matched and unmatched codes
+     ├─ Preview rows
+     ├─ Highlighted workbook data
+     └─ Processing statistics
+     ▼
+BarcodeReconciliationListener
+  │
+  ├─ Saves the final workbook as:
+  │  runtime/reconciliations/<reconciliationId>/result.xlsx
+  ├─ Stores the ReconciliationResponse
+  ├─ Changes status to COMPLETED
+  └─ Returns successfully from the listener method
+     ▼
+RabbitMQ acknowledgement
+  │
+  └─ RabbitMQ removes the successfully processed message
+     from barcode.reconciliation.queue
+     ▼
+Frontend status polling
+  │
+  │ GET /api/v1/barcode-reconciliations/<reconciliationId>
+  │
+  └─ Receives status information:
+     ├─ status: COMPLETED
+     ├─ stage: Completed
+     ├─ errorMessage: null
+     └─ resultAvailable: true
+     ▼
+Frontend result retrieval
+  │
+  ├─ GET /api/v1/barcode-reconciliations/<reconciliationId>/result
+  │  └─ Retrieves the ReconciliationResponse
+  │
+  └─ GET /api/v1/barcode-reconciliations/<reconciliationId>/download
+     └─ Downloads the highlighted Excel file
+~~~
 
-    %% LAYER 3: BARCODE COLUMN MATCHING
-    subgraph Layer3 ["5️⃣ Layer 3: Precision Excel Barcode Highlighting"]
-        Excel_Engine["📑 ExcelHighlightService (Apache POI)\n• Multi-Sheet Scanning (Full Catalog Priority)\n• Formula & Title Banner Filtering\n• Exact Barcode Column & Digit Matching\n• Universal Soft Red Styling (#FFB3B3)"]:::layer3
-    end
+## RabbitMQ job message
 
-    %% Data Flow
-    UI_Upload -->|1. Multipart Upload| API_Ctrl
-    API_Ctrl --> API_Orch
-    API_Orch -->|2. ZXing first; Ollama only on misses| Ollama_AI
-    Ollama_AI <-->|Local REST + JSON Schema| LocalAI["💻 Ollama localhost:11434"]:::layer1
-    Ollama_AI -->|3. Extracted Barcode Numbers| GS1_Validator
-    GS1_Validator -->|4. Validated Checksum Barcodes| API_Orch
-    API_Orch -->|5. Match Barcodes in Excel| Excel_Engine
-    Excel_Engine -->|6. In-Memory Modified Workbook| API_Orch
-    API_Orch -->|7. JSON + Base64 Excel| API_Ctrl
-    API_Ctrl --> UI_Preview
-    API_Ctrl --> UI_Cards
-    API_Ctrl --> UI_Download
-```
+The queue stores a JSON message containing references to the uploaded files and the options for the reconciliation job.
 
----
+~~~json
+{
+  "reconciliationId": "generated-job-id",
+  "excelFilePath": "runtime/reconciliations/<id>/excel/input.xlsx",
+  "imageFilePaths": [
+    "runtime/reconciliations/<id>/images/1.jpg",
+    "runtime/reconciliations/<id>/images/2.jpg"
+  ],
+  "columnName": "QR Barcode",
+  "highlightFullRow": false
+}
+~~~
 
-## 🔍 How the Barcode-Focused Pipeline Works
+RabbitMQ stores the message, not the actual Excel or image files. The listener loads those files from Spring Boot runtime storage.
 
-### 🧠 Layer 1: Pure Barcode Number Extraction
-* **Focus**: Strictly captures the **universal numeric barcode numbers** (`840192837401`) and QR code data.
-* **Why**: Product names and Item IDs can vary or be formatted differently across companies, but the **Barcode Number is globally unique and standardized**.
-* **Capability**: Automatically reads single product boxes **AND** multi-barcode sheets (e.g. Items #01 to #05 on a single verification sheet).
+## RabbitMQ reliability
 
----
+- The main queue is durable.
+- The listener receives one reconciliation job at a time.
+- A successful listener completion acknowledges and removes the message.
+- Failed processing is retried up to three attempts.
+- Repeatedly failed messages are routed to barcode.reconciliation.failed.
 
-### 📐 Layer 2: Mathematical GS1 Modulo-10 Checksum Verification
-* **How It Works**: Every extracted 12-digit (UPC-A) and 13-digit (EAN-13) barcode is mathematically validated against the official GS1 Modulo-10 check digit formula:
-  $$\text{Check Digit} = (10 - ((d_1 + d_3 + d_5 + d_7 + d_9 + d_{11}) \times 3 + (d_2 + d_4 + d_6 + d_8 + d_{10})) \pmod{10}) \pmod{10}$$
+## API endpoints
 
----
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| POST | /api/v1/barcodes/reconcile | Upload files and create a queued job |
+| GET | /api/v1/barcode-reconciliations/<reconciliationId> | Read job status |
+| GET | /api/v1/barcode-reconciliations/<reconciliationId>/result | Read the completed JSON result |
+| GET | /api/v1/barcode-reconciliations/<reconciliationId>/download | Download the highlighted workbook |
+| GET | /api/v1/health | Check that the Spring Boot API is reachable |
 
-### 📑 Layer 3: Excel Barcode Column Matching & Styling
-* **How It Works**:
-  1. **Smart Sheet Prioritization**: Targets the main catalog sheet with all item rows.
-  2. **Banner & Formula Exclusion**: Ignores formulas (`=COUNTIF(...)`, `=SUM(...)`) and merged title banners.
-  3. **Exact Barcode Matching**: Searches for the extracted barcode numbers within the spreadsheet.
-  4. **Universal Styling**: Applies **Vivid Soft Red (`#FFB3B3`)** with dark red bold text compatible across **Microsoft Excel, Apple Numbers, LibreOffice, and Google Sheets**.
+The status and result endpoints read data from Spring Boot after processing. They do not read the completed response from RabbitMQ.
 
----
+## Environment configuration
 
-## 📁 Project Structure
+Do not commit real credentials. Configure these values locally or in the Render backend service.
 
-```
-Excel-Decoding-project/
-├── .env                       # Root environment configuration (Ollama model)
-├── backend/                   # Spring Boot 3 (Java 17/21) Backend
-│   ├── .env                   # Backend environment configuration
-│   ├── pom.xml                # Maven dependencies (Spring Boot, POI, ZXing, Jackson)
-│   ├── src/main/java/com/excel/reconciler/
-│   │   ├── ExcelReconcilerApplication.java # Entrypoint with automatic .env loader
-│   │   ├── config/            # Async thread pools & CORS configuration
-│   │   ├── controller/        # REST API endpoints (/api/v1/barcodes/reconcile)
-│   │   ├── service/           # OllamaVisionService, ZXingDecoderService,
-│   │   │                      # ExcelImageExtractorService, ExcelHighlightService,
-│   │   │                      # ReconciliationService
-│   │   ├── util/              # BarcodeValidator (GS1 Modulo-10 Checksum)
-│   │   └── model/             # BarcodeResult, ExcelRowPreview, ReconciliationResponse
-│   └── src/main/resources/
-│       └── application.yml    # Multipart file limits & model bindings
-│
-├── frontend/                  # React 19 + Vite + Tailwind CSS Frontend
-│   ├── package.json           # Dependencies (React, Lucide, Tailwind, Canvas-Confetti)
-│   ├── vite.config.ts         # Vite server proxy configuration
-│   └── src/
-│       ├── app/                # Application composition and shell UI
-│       │   ├── App.tsx         # Main application view
-│       │   └── components/
-│       │       └── AppHeader.tsx
-│       ├── features/
-│       │   └── reconciliation/
-│       │       ├── api/        # Multipart upload client and Excel downloader
-│       │       ├── components/ # Upload, preview, stats, and scan result UI
-│       │       └── model/      # Reconciliation types and upload validation
-│       ├── shared/
-│       │   └── i18n/           # Khmer-only provider and translations
-│       ├── styles/index.css    # Global Tailwind/base styles
-│       └── main.tsx            # React entrypoint
-│
-└── sample-data/               # Pre-configured test files
-    ├── sample_inventory.xlsx  # Multi-sheet inventory spreadsheet
-    └── images/                # Sample 1D and 2D barcode box photos
-```
+### Local RabbitMQ
 
----
+~~~env
+RABBITMQ_HOST=localhost
+RABBITMQ_PORT=5672
+RABBITMQ_USERNAME=guest
+RABBITMQ_PASSWORD=guest
+RABBITMQ_VIRTUAL_HOST=/
+RABBITMQ_SSL_ENABLED=false
+~~~
 
-## ⚙️ Environment Configuration
+### CloudAMQP production
 
-Configure the local Ollama model in `.env`:
+~~~env
+RABBITMQ_HOST=<CloudAMQP hostname>
+RABBITMQ_PORT=5671
+RABBITMQ_USERNAME=<CloudAMQP username>
+RABBITMQ_PASSWORD=<CloudAMQP password>
+RABBITMQ_VIRTUAL_HOST=<CloudAMQP virtual host>
+RABBITMQ_SSL_ENABLED=true
+~~~
 
-```env
-# Local Ollama vision model
-OLLAMA_API_MODEL=qwen3-vl:8b-instruct
-OLLAMA_API_URL=http://localhost:11434/api/chat
-```
+Gemini configuration:
 
----
+~~~env
+GEMINI_API_KEY=<Gemini API key>
+GEMINI_API_MODEL=gemini-flash-lite-latest
+GEMINI_API_URL=https://generativelanguage.googleapis.com/v1beta/models
+~~~
 
-## 🚀 Quick Start Guide
+Other application settings:
+
+~~~env
+APP_CORS_ALLOWED_ORIGINS=http://localhost:5173
+RECONCILIATION_STORAGE_ROOT=runtime/reconciliations
+~~~
+
+The env files are ignored by Git. Use Render's environment-variable settings for production secrets.
+
+## Local development
 
 ### Prerequisites
-- **Java 17+** (OpenJDK recommended)
-- **Maven 3.8+**
-- **Node.js 18+** & **npm**
-- **Ollama** with `qwen3-vl:8b-instruct` downloaded
 
----
+- Java 17 or newer
+- Maven 3.8 or newer
+- Node.js 18 or newer
+- A running RabbitMQ instance, either local or hosted
+- A Gemini API key
 
-### Step 1: Start Backend (Spring Boot)
+### Start the backend
 
-```bash
+~~~bash
 cd backend
 mvn spring-boot:run
-```
-*Backend starts at `http://localhost:8080` and loads `.env` automatically.*
+~~~
 
----
+The backend runs on http://localhost:8080 by default.
 
-### Step 2: Start Frontend (React + Vite)
+### Start the frontend
 
-```bash
+~~~bash
 cd frontend
 npm install
 npm run dev
-```
-*Open `http://localhost:5173` in your browser.*
+~~~
 
----
+The frontend runs on http://localhost:5173 by default.
 
-### Step 3: Reconcile Barcodes & Excel
-1. Drop your `.xlsx`, `.xls`, or `.csv` spreadsheet, or a `.png`, `.jpg`, `.jpeg`, or `.webp` image of an Excel table, into **Step 1**.
-2. Drop your product photos or multi-barcode sheets into **Step 2: Barcode / QR Images**.
-3. Click **"Start Reconcile & Highlight"**.
-4. View your matched items in red on the spreadsheet preview and click **"Download Highlighted Excel"**!
+### Run a reconciliation
 
----
+1. Upload an Excel file or Excel-table image in Step 1.
+2. Upload barcode or QR-code images in Step 2.
+3. Select the barcode column and highlighting option.
+4. Start the reconciliation.
+5. Wait for the status to change from QUEUED to PROCESSING to COMPLETED.
+6. Review the preview and download the highlighted workbook.
 
-## 🧪 Automated Testing
+## Deployment flow
 
-Run the automated backend test suite:
+1. Create or start the CloudAMQP RabbitMQ instance.
+2. Configure the production RabbitMQ and Gemini variables in the Render backend service.
+3. Deploy the Spring Boot backend from backend/Dockerfile.
+4. Confirm the backend health endpoint returns status: UP.
+5. Submit one real reconciliation and confirm it reaches COMPLETED.
+6. Configure the frontend API URL to point to the live backend.
+7. Deploy the frontend and test upload, polling, preview, and download.
 
-```bash
+RabbitMQ is hosted separately from the Spring Boot service. The backend connects to it through the CloudAMQP hostname and TLS port.
+
+## Project structure
+
+~~~text
+.
+├── backend/
+│   ├── Dockerfile
+│   ├── pom.xml
+│   └── src/main/
+│       ├── java/com/excel/reconciler/
+│       │   ├── config/
+│       │   │   └── RabbitMqConfig.java
+│       │   ├── controller/
+│       │   │   └── BarcodeReconciliationController.java
+│       │   ├── model/
+│       │   │   └── BarcodeReconciliationRequest.java
+│       │   └── service/
+│       │       ├── BarcodeDecoderService.java
+│       │       ├── BarcodeReconciliationListener.java
+│       │       ├── BarcodeReconciliationPublisher.java
+│       │       ├── ExcelHighlightService.java
+│       │       ├── ExcelImageExtractorService.java
+│       │       ├── LocalReconciliationFileStorageService.java
+│       │       └── ReconciliationService.java
+│       └── resources/application.yml
+├── frontend/
+│   ├── package.json
+│   └── src/
+│       ├── app/
+│       └── features/reconciliation/
+└── README.md
+~~~
+
+## Verification commands
+
+Backend compile:
+
+~~~bash
+cd backend
+mvn -q -DskipTests compile
+~~~
+
+Backend tests:
+
+~~~bash
 cd backend
 mvn test
-```
+~~~
 
-Run the frontend build and focused upload/localization checks:
+Frontend build and tests:
 
-```bash
+~~~bash
 cd frontend
 npm run build
-node --experimental-strip-types --test tests/fileValidation.test.ts tests/i18n.test.ts
-```
+npm test
+~~~
+
+## Production storage note
+
+The current implementation stores uploaded files and results in local runtime storage and keeps job status in the running backend process. RabbitMQ can retain a queued message, but it cannot restore a file that was lost during a backend restart or redeploy.
+
+For restart-safe production storage, move uploaded files and results to object storage and persist reconciliation status in a database.
