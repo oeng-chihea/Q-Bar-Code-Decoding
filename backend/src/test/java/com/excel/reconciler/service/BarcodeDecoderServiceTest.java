@@ -31,7 +31,7 @@ class BarcodeDecoderServiceTest {
         when(zxing.decode(any(byte[].class))).thenReturn(Collections.singletonList(
                 new Result("01400310465", null, null, BarcodeFormat.CODE_128)));
 
-        BarcodeResult result = service.decodeSingleFile(image);
+        BarcodeResult result = service.decodeBatch(List.of(image)).get(0);
 
         assertTrue(result.isSuccess());
         assertEquals("01400310465", result.getDecodedValue());
@@ -50,7 +50,7 @@ class BarcodeDecoderServiceTest {
         when(gemini.extractBarcodesParallel(any()))
                 .thenReturn(List.of(List.of("01400310465")));
 
-        BarcodeResult result = service.decodeSingleFile(image);
+        BarcodeResult result = service.decodeBatch(List.of(image)).get(0);
 
         assertTrue(result.isSuccess());
         assertEquals("01400310465", result.getDecodedValue());

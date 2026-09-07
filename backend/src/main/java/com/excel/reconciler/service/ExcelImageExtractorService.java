@@ -28,10 +28,10 @@ public class ExcelImageExtractorService {
     private final ObjectMapper objectMapper;
 
     public static final String BARCODE_REJECTION_MESSAGE =
-            "Barcode images are not supported in the Excel section. The Excel upload supports spreadsheet files (.xlsx, .xls, .csv) or images of an Excel table (.png, .jpg, .jpeg, .webp). Please upload barcode images in Step 2.";
+            "Barcode images are not supported in the Excel section. The Excel upload supports only images of an Excel table (.png, .jpg, .jpeg, .webp). Please upload barcode images in Step 2.";
 
     public static final String NOT_AN_EXCEL_TABLE_MESSAGE =
-            "The uploaded image in Step 1 is not an Excel table or spreadsheet. Only images of an Excel table (.png, .jpg, .jpeg, .webp) containing tabular rows and columns are supported. Please upload an Excel table image in Step 1.";
+            "The uploaded image in Step 1 is not an Excel table. Only images of an Excel table (.png, .jpg, .jpeg, .webp) containing tabular rows and columns are supported. Please upload an Excel table image in Step 1.";
 
     public static class ExtractedExcelData {
         private final boolean isExcelTable;
@@ -104,22 +104,6 @@ public class ExcelImageExtractorService {
     public ExcelImageExtractorService(GeminiVisionService geminiVisionService, ObjectMapper objectMapper) {
         this.geminiVisionService = geminiVisionService;
         this.objectMapper = objectMapper;
-    }
-
-    public boolean isImage(MultipartFile file) {
-        if (file == null || file.isEmpty()) return false;
-        String ct = file.getContentType();
-        if (ct != null && ct.toLowerCase().startsWith("image/")) {
-            return true;
-        }
-        String name = file.getOriginalFilename();
-        if (name != null) {
-            String lower = name.toLowerCase();
-            return lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
-                    || lower.endsWith(".webp") || lower.endsWith(".bmp") || lower.endsWith(".tif")
-                    || lower.endsWith(".tiff");
-        }
-        return false;
     }
 
     /**
@@ -405,10 +389,6 @@ public class ExcelImageExtractorService {
             log.warn("Rejected Gemini table response: {}", e.getMessage());
             return null;
         }
-    }
-
-    public ExtractedExcelData parseOllamaResponse(String rawJson) {
-        return parseGeminiResponse(rawJson);
     }
 
     /**

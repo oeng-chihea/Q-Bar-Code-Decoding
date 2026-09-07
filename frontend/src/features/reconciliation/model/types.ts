@@ -2,7 +2,7 @@ export interface BarcodeResult {
   filename: string;
   decodedValue?: string;
   allExtractedValues?: string[];
-  decoderType: 'ZXING' | 'OLLAMA_AI' | 'FAILED';
+  decoderType: 'ZXING' | 'GEMINI_AI' | 'FAILED';
   success: boolean;
   barcodeFormat?: string;
   errorMessage?: string;
@@ -35,11 +35,28 @@ export interface ReconciliationResponse {
   previewRows: ExcelRowPreview[];
   highlightedExcelBase64: string;
   downloadFileName: string;
-  excelSourceType?: 'EXCEL_FILE' | 'EXCEL_TABLE_IMAGE';
+  excelSourceType?: 'EXCEL_TABLE_IMAGE';
   executionTimeMs: number;
 }
 
 export interface ReconciliationConfig {
   columnName: string;
   highlightFullRow: boolean;
+}
+
+export type ReconciliationStatus = 'QUEUED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+
+export interface ReconciliationSubmissionResponse {
+  reconciliationId: string;
+  status: ReconciliationStatus;
+  statusUrl: string;
+}
+
+export interface ReconciliationStatusResponse {
+  reconciliationId: string;
+  status: ReconciliationStatus;
+  stage: string;
+  errorMessage?: string;
+  resultAvailable: boolean;
+  downloadFileName?: string;
 }

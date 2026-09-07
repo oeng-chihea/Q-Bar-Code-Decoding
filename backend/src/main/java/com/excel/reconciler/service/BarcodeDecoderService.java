@@ -113,10 +113,6 @@ public class BarcodeDecoderService {
         return results;
     }
 
-    public BarcodeResult decodeSingleFile(MultipartFile file) {
-        return decodeBatch(List.of(file)).get(0);
-    }
-
     private LocalScan scanWithZxing(MultipartFile file) {
         String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "image_" + System.currentTimeMillis();
         try {

@@ -26,7 +26,6 @@ class ReconciliationServiceTest {
         MockMultipartFile tableImage = new MockMultipartFile(
                 "excelFile", "inventory.png", "image/png", new byte[]{9, 8, 7});
 
-        when(extractor.isImage(tableImage)).thenReturn(true);
         when(extractor.processExcelImage(tableImage)).thenReturn(
                 new ExcelImageExtractorService.ExtractedExcelData(
                         true, false, null, "Scanned Inventory", List.of("Barcode"),
@@ -55,7 +54,6 @@ class ReconciliationServiceTest {
 
         MockMultipartFile barcodeImage = new MockMultipartFile(
                 "excelFile", "barcode.png", "image/png", new byte[]{1, 2, 3});
-        when(extractor.isImage(barcodeImage)).thenReturn(true);
         when(extractor.processExcelImage(barcodeImage)).thenThrow(
                 new IllegalArgumentException("Barcode images are not supported in the Excel section."));
 
@@ -77,7 +75,6 @@ class ReconciliationServiceTest {
         MockMultipartFile scanImage = new MockMultipartFile(
                 "images", "2.jpg", "image/jpeg", new byte[]{2});
 
-        when(extractor.isImage(tableImage)).thenReturn(true);
         when(extractor.processExcelImage(tableImage)).thenReturn(
                 new ExcelImageExtractorService.ExtractedExcelData(
                         true, false, null, "Sheet", List.of("Waybill Number"),

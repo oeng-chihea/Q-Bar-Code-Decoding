@@ -7,7 +7,7 @@ import {
   Layers,
 } from 'lucide-react';
 import type { ExcelRowPreview } from '@/features/reconciliation/model/types';
-import { downloadBase64Excel } from '@/features/reconciliation/api/reconciliationApi';
+import { downloadReconciliation } from '@/features/reconciliation/api/reconciliationApi';
 import { useTranslation } from '@/shared/i18n/i18n';
 
 interface ExcelPreviewTableProps {
@@ -18,7 +18,7 @@ interface ExcelPreviewTableProps {
   activeSheetName?: string;
   totalRows: number;
   matchedCount: number;
-  highlightedExcelBase64: string;
+  reconciliationId: string;
   downloadFileName: string;
 }
 
@@ -30,18 +30,29 @@ export const ExcelPreviewTable = ({
   activeSheetName,
   totalRows,
   matchedCount,
-  highlightedExcelBase64,
+  reconciliationId,
   downloadFileName,
 }: ExcelPreviewTableProps) => {
   const { t } = useTranslation();
   const [onlyMatched, setOnlyMatched] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const displayRows = onlyMatched
     ? previewRows.filter((r) => r.matched)
     : previewRows;
 
-  const handleDownload = () => {
-    downloadBase64Excel(highlightedExcelBase64, downloadFileName);
+  const handleDownload = async () => {
+    if (!reconciliationId || isDownloading) return;
+    setIsDownloading(true);
+    setDownloadError(null);
+    try {
+      await downloadReconciliation(reconciliationId, downloadFileName);
+    } catch (error: unknown) {
+      setDownloadError(error instanceof Error ? error.message : 'Download failed');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -90,14 +101,18 @@ export const ExcelPreviewTable = ({
 
           {/* Download Action */}
           <button
-            onClick={handleDownload}
+            onClick={() => void handleDownload()}
             className="px-3.5 py-1.5 rounded-md border border-[#A0E3E2]/40 text-xs font-semibold text-[#0E1726] bg-[#A0E3E2] hover:bg-[#8EE0DF] transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+            disabled={isDownloading}
           >
             <Download className="w-3.5 h-3.5" />
             {t('preview.download')}
           </button>
         </div>
       </div>
+      {downloadError && (
+        <p className="text-xs text-[#FCA5A5] m-0">{downloadError}</p>
+      )}
 
       {/* Spreadsheet Table */}
       <div className="overflow-x-auto rounded-md border border-[#2B2D35] bg-[#16171B]">

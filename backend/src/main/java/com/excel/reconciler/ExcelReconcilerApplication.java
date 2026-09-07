@@ -2,7 +2,6 @@ package com.excel.reconciler;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.scheduling.annotation.EnableAsync;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -11,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @SpringBootApplication
-@EnableAsync
 public class ExcelReconcilerApplication {
 
     public static void main(String[] args) {

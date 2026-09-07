@@ -7,7 +7,11 @@ import { ReconciliationStats } from '@/features/reconciliation/components/Reconc
 import { ImageScanGrid } from '@/features/reconciliation/components/ImageScanGrid';
 import { ExcelPreviewTable } from '@/features/reconciliation/components/ExcelPreviewTable';
 import type { ReconciliationResponse } from '@/features/reconciliation/model/types';
-import { reconcileFiles } from '@/features/reconciliation/api/reconciliationApi';
+import {
+  getReconciliationResult,
+  submitReconciliation,
+  waitForReconciliation,
+} from '@/features/reconciliation/api/reconciliationApi';
 import { localizeError, useTranslation } from '@/shared/i18n/i18n';
 
 export function App() {
@@ -17,6 +21,7 @@ export function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [results, setResults] = useState<ReconciliationResponse | null>(null);
+  const [reconciliationId, setReconciliationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleStartReconcile = async () => {
@@ -27,11 +32,16 @@ export function App() {
     setUploadProgress(0);
 
     try {
-      const res = await reconcileFiles(excelFile, imageFiles, {}, (percent) => {
+      const submission = await submitReconciliation(excelFile, imageFiles, {}, (percent) => {
         setUploadProgress(percent);
       });
+      setReconciliationId(submission.reconciliationId);
+
+      await waitForReconciliation(submission.reconciliationId);
+      const res = await getReconciliationResult(submission.reconciliationId);
 
       setResults(res);
+      setUploadProgress(100);
 
       // Trigger confetti celebration
       try {
@@ -53,6 +63,7 @@ export function App() {
 
   const handleReset = () => {
     setResults(null);
+    setReconciliationId(null);
     setError(null);
     setUploadProgress(0);
   };
@@ -123,7 +134,7 @@ export function App() {
               activeSheetName={results.activeSheetName}
               totalRows={results.excelTotalRows}
               matchedCount={results.matchedRowsCount}
-              highlightedExcelBase64={results.highlightedExcelBase64}
+              reconciliationId={reconciliationId || ''}
               downloadFileName={results.downloadFileName}
             />
 
