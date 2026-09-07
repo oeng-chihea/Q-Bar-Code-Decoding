@@ -1,5 +1,7 @@
 package com.excel.reconciler.service;
 
+import org.springframework.lang.NonNull;
+import org.springframework.lang.Nullable;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
@@ -23,16 +25,19 @@ final class StoredMultipartFile implements MultipartFile {
     }
 
     @Override
+    @NonNull
     public String getName() {
-        return name;
+        return name != null ? name : "";
     }
 
     @Override
+    @Nullable
     public String getOriginalFilename() {
         return originalFilename;
     }
 
     @Override
+    @Nullable
     public String getContentType() {
         return contentType;
     }
@@ -52,22 +57,24 @@ final class StoredMultipartFile implements MultipartFile {
     }
 
     @Override
+    @NonNull
     public byte[] getBytes() throws IOException {
         return Files.readAllBytes(path);
     }
 
     @Override
+    @NonNull
     public InputStream getInputStream() throws IOException {
         return Files.newInputStream(path);
     }
 
     @Override
-    public void transferTo(File destination) throws IOException {
+    public void transferTo(@NonNull File destination) throws IOException {
         Files.copy(path, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
     }
 
     @Override
-    public void transferTo(Path destination) throws IOException {
+    public void transferTo(@NonNull Path destination) throws IOException {
         Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
     }
 }

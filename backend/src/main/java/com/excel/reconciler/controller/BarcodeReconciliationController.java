@@ -18,20 +18,24 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.lang.NonNull;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1")
 public class BarcodeReconciliationController {
 
+    @NonNull
     private static final MediaType XLSX_MEDIA_TYPE =
-            MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Objects.requireNonNull(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
 
     private final BarcodeReconciliationPublisher reconciliationPublisher;
     private final BarcodeReconciliationRegistry reconciliationRegistry;

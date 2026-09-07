@@ -284,7 +284,7 @@ public class ExcelImageExtractorService {
         );
 
         GeminiVisionService.JsonResponse response = geminiVisionService.generateJson(
-                imageBytes, mimeType, prompt, schema);
+                imageBytes, mimeType, prompt, schema, systemInstruction);
         if (response.isSuccessful()) {
             ExtractedExcelData parsed = parseGeminiResponse(response.content());
             if (parsed != null) {

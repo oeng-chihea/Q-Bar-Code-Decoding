@@ -2,6 +2,7 @@ package com.excel.reconciler.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -14,9 +15,10 @@ public class WebConfig implements WebMvcConfigurer {
     private String allowedOrigins;
 
     @Override
-    public void addCorsMappings(CorsRegistry registry) {
+    public void addCorsMappings(@NonNull CorsRegistry registry) {
+        String originsConfig = allowedOrigins != null ? allowedOrigins : "";
         registry.addMapping("/**")
-                .allowedOriginPatterns(Arrays.stream(allowedOrigins.split(","))
+                .allowedOriginPatterns(Arrays.stream(originsConfig.split(","))
                         .map(String::trim)
                         .filter(origin -> !origin.isEmpty())
                         .toArray(String[]::new))

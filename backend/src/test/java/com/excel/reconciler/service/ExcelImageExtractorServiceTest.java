@@ -20,10 +20,11 @@ class ExcelImageExtractorServiceTest {
     @Test
     void tableImageExtractionUsesGeminiAndPreservesKhmerValues() throws Exception {
         GeminiVisionService gemini = mock(GeminiVisionService.class);
-        when(gemini.generateJson(any(), any(), any(), any())).thenReturn(
-                new GeminiVisionService.JsonResponse(200,
-                        "{\"isExcelTable\":true,\"isBarcodeImage\":false,\"sheetName\":\"Inventory\",\"headers\":[\"Shipping Outlets\"],\"rows\":[{\"values\":[\"សាខាសៀមរាប/REPDP01\"]}]}",
-                        null));
+        var jsonResponse = new GeminiVisionService.JsonResponse(200,
+                "{\"isExcelTable\":true,\"isBarcodeImage\":false,\"sheetName\":\"Inventory\",\"headers\":[\"Shipping Outlets\"],\"rows\":[{\"values\":[\"សាខាសៀមរាប/REPDP01\"]}]}",
+                null);
+        when(gemini.generateJson(any(), any(), any(), any())).thenReturn(jsonResponse);
+        when(gemini.generateJson(any(), any(), any(), any(), any())).thenReturn(jsonResponse);
         when(gemini.getConfiguredModel()).thenReturn("gemini-2.5-flash");
 
         ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());

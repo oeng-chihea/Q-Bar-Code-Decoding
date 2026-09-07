@@ -128,7 +128,10 @@ public class ReconciliationService {
 
         // 5. Build response
         String base64Excel = Base64.getEncoder().encodeToString(excelResult.getModifiedExcelBytes());
-        String originalName = excelFile.getOriginalFilename() != null ? excelFile.getOriginalFilename() : "spreadsheet.xlsx";
+        String originalFilename = excelFile.getOriginalFilename();
+        String originalName = (originalFilename != null && !originalFilename.isBlank())
+                ? originalFilename
+                : "spreadsheet.xlsx";
         String downloadName = originalName.replaceFirst("(?i)\\.(xlsx|xls|csv|png|jpg|jpeg|webp)$", "")
                 + "_highlighted.xlsx";
 

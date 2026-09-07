@@ -5,8 +5,6 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.DefaultIndexedColorMap;
 import org.apache.poi.xssf.usermodel.XSSFCellStyle;
 import org.apache.poi.xssf.usermodel.XSSFColor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -15,7 +13,6 @@ import java.util.*;
 
 @Service
 public class ExcelHighlightService {
-    private static final Logger log = LoggerFactory.getLogger(ExcelHighlightService.class);
 
     public static class ExcelProcessingResult {
         private final byte[] modifiedExcelBytes;
@@ -228,7 +225,7 @@ public class ExcelHighlightService {
             }
         }
 
-        if (primarySheet == null) {
+        if (primarySheet == null || primaryHeaderInfo == null) {
             primarySheet = workbook.getSheetAt(0);
             primaryHeaderInfo = new SheetHeaderInfo();
             primaryHeaderInfo.resolvedColName = preferredColumnName != null ? preferredColumnName : "QR Barcode";

@@ -39,6 +39,9 @@ public class BarcodeReconciliationControllerTest {
     @MockBean
     private com.excel.reconciler.service.GeminiVisionService geminiVisionService;
 
+    @MockBean
+    private com.excel.reconciler.service.BarcodeReconciliationPublisher reconciliationPublisher;
+
     @Test
     public void testReconcileEndpoint() throws Exception {
         // 1. Create test Excel with a "QR Barcode" column
@@ -114,12 +117,14 @@ public class BarcodeReconciliationControllerTest {
         mockMvc.perform(multipart("/api/v1/barcodes/reconcile")
                         .file(tableImage)
                         .file(barcodeImage))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.excelSourceType").value("EXCEL_TABLE_IMAGE"))
-                .andExpect(jsonPath("$.excelTotalRows").value(1))
-                .andExpect(jsonPath("$.matchedRowsCount").value(1))
-                .andExpect(jsonPath("$.matchedCodes[0]").value("SKU-9901"));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.reconciliationId").isString())
+                .andExpect(jsonPath("$.status").value("QUEUED"))
+                .andExpect(jsonPath("$.statusUrl").isString());
     }
+
+    @Autowired
+    private com.excel.reconciler.service.ReconciliationService reconciliationService;
 
     @Test
     public void testRejectBarcodeImageUploadedAsExcelFile() throws Exception {
@@ -143,24 +148,28 @@ public class BarcodeReconciliationControllerTest {
                 imgOut.toByteArray()
         );
 
+        var rejectionResponse = new com.excel.reconciler.service.GeminiVisionService.JsonResponse(
+                200,
+                """
+                {
+                  "isExcelTable": false,
+                  "isBarcodeImage": true,
+                  "rejectionReason": "Barcode images are not supported in the Excel section."
+                }
+                """,
+                null);
         when(geminiVisionService.generateJson(
                 any(byte[].class), eq("image/png"), anyString(), anyMap()))
-                .thenReturn(new com.excel.reconciler.service.GeminiVisionService.JsonResponse(
-                        200,
-                        """
-                        {
-                          "isExcelTable": false,
-                          "isBarcodeImage": true,
-                          "rejectionReason": "Barcode images are not supported in the Excel section."
-                        }
-                        """,
-                        null));
+                .thenReturn(rejectionResponse);
+        when(geminiVisionService.generateJson(
+                any(byte[].class), eq("image/png"), anyString(), anyMap(), anyString()))
+                .thenReturn(rejectionResponse);
 
-        mockMvc.perform(multipart("/api/v1/barcodes/reconcile")
-                        .file(barcodeInExcelSlot)
-                        .file(imgFile))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("Barcode images are not supported")));
+        var ex = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> reconciliationService.reconcile(barcodeInExcelSlot, List.of(imgFile), "QR Barcode", false)
+        );
+        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("Barcode images are not supported"));
     }
 
     @Autowired
