@@ -15,3 +15,10 @@ export function reconciliationDownloadPath(reconciliationId: string): string {
 export function reconciliationUnmatchedDownloadPath(reconciliationId: string): string {
   return `${reconciliationStatusPath(reconciliationId)}/download-unmatched`;
 }
+
+export function reconciliationUnmatchedImageDownloadPath(
+  reconciliationId: string,
+  imageIndex: number,
+): string {
+  return `${reconciliationUnmatchedDownloadPath(reconciliationId)}/${encodeURIComponent(String(imageIndex))}`;
+}

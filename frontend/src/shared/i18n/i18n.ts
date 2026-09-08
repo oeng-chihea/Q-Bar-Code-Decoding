@@ -87,6 +87,9 @@ const khmer = {
   'unmatched.noBarcodeTag': 'រកមិនឃើញបាកូដ',
   'unmatched.download': 'ទាញយករូបភាពមិនត្រូវគ្នា',
   'unmatched.downloading': 'កំពុងទាញយក...',
+  'unmatched.downloadAllRaw': 'ទាញយករូបភាពដើមទាំងអស់',
+  'unmatched.downloadingAll': 'កំពុងទាញយករូបភាពដើម...',
+  'unmatched.downloadRaw': 'ទាញយករូបភាពដើម',
   'unmatched.downloadError': 'ការទាញយកបានបរាជ័យ',
   'unmatched.close': 'បិទ',
 } as const;

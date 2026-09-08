@@ -3,11 +3,13 @@ import type {
   ReconciliationResponse,
   ReconciliationStatusResponse,
   ReconciliationSubmissionResponse,
+  UnmatchedImagesResponse,
 } from '@/features/reconciliation/model/types';
 import {
   reconciliationDownloadPath,
   reconciliationResultPath,
   reconciliationStatusPath,
+  reconciliationUnmatchedImageDownloadPath,
   reconciliationUnmatchedDownloadPath,
 } from './reconciliationApiPaths.ts';
 
@@ -119,37 +121,63 @@ export async function downloadReconciliation(
     throw new Error(await getErrorMessage(response, `Download failed (${response.status})`));
   }
 
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename || 'reconciliation_highlighted.xlsx';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
+  await triggerBrowserDownload(await response.blob(), filename || 'reconciliation_highlighted.xlsx');
 }
 
-export async function downloadUnmatchedImages(
+export async function fetchUnmatchedImages(
   reconciliationId: string,
-  filename?: string
+): Promise<UnmatchedImagesResponse> {
+  return getJson<UnmatchedImagesResponse>(reconciliationUnmatchedDownloadPath(reconciliationId));
+}
+
+export async function downloadUnmatchedImage(
+  reconciliationId: string,
+  imageIndex: number,
+  filename?: string,
 ): Promise<void> {
   const response = await fetch(
-    `${API_BASE_URL}${reconciliationUnmatchedDownloadPath(reconciliationId)}`
+    `${API_BASE_URL}${reconciliationUnmatchedImageDownloadPath(reconciliationId, imageIndex)}`,
   );
   if (!response.ok) {
     throw new Error(await getErrorMessage(response, `Download failed (${response.status})`));
   }
 
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
+  const fallbackFilename = `unmatched-image-${imageIndex + 1}.bin`;
+  await triggerBrowserDownload(await response.blob(), filename || fallbackFilename);
+}
+
+export async function downloadUnmatchedImages(
+  reconciliationId: string,
+): Promise<void> {
+  const manifest = await fetchUnmatchedImages(reconciliationId);
+  if (!Array.isArray(manifest.images) || manifest.images.length === 0) {
+    throw new Error('No unmatched images found');
+  }
+
+  for (let index = 0; index < manifest.images.length; index += 1) {
+    const image = manifest.images[index];
+    await downloadUnmatchedImage(reconciliationId, image.imageIndex, image.filename);
+
+    // Give mobile browsers time to finish each download before starting the next one.
+    if (index < manifest.images.length - 1) {
+      await delay(150);
+    }
+  }
+}
+
+async function triggerBrowserDownload(blob: Blob, filename: string): Promise<void> {
+  const browserUrl = window.URL;
+  const url = browserUrl.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = filename || 'unmatched_images.zip';
+  link.download = filename;
+  link.rel = 'noopener';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
+
+  // Delaying revocation avoids cancelling downloads on slower mobile browsers.
+  globalThis.setTimeout(() => browserUrl.revokeObjectURL(url), 1000);
 }
 
 async function getJson<T>(path: string): Promise<T> {

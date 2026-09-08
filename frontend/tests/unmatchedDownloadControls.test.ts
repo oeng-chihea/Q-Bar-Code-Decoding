@@ -14,4 +14,6 @@ test('ImageScanGrid renders guarded unmatched download control and download erro
   assert.equal((component.match(/\{downloadError && \(/g) ?? []).length, 1);
   assert.ok(component.includes("handleDownloadUnmatched"));
   assert.ok(component.includes("downloadUnmatchedImages"));
+  assert.ok(component.includes("downloadUnmatchedImage"));
+  assert.ok(component.includes("downloadingImageIndex"));
 });

@@ -11,19 +11,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Base64;
-import java.util.HashSet;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.IntStream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 @Service
 public class LocalReconciliationFileStorageService {
     private static final String RESULT_FILE_NAME = "result.xlsx";
-    private static final String UNMATCHED_ZIP_FILE_NAME = "unmatched_images.zip";
 
     private final Path storageRoot;
 
@@ -52,8 +48,8 @@ public class LocalReconciliationFileStorageService {
                 .mapToObj(index -> {
                     try {
                         MultipartFile file = Objects.requireNonNull(files.get(index), "Image file is required");
-                        String fallbackName = "image-" + index + ".bin";
-                        return saveMultipartFile(imageDirectory, file, index + "-" + fallbackName);
+                        String originalName = safeFilename(file.getOriginalFilename(), "image-" + index + ".bin");
+                        return saveMultipartFileWithName(imageDirectory, file, index + "-" + originalName);
                     } catch (IOException e) {
                         throw new StorageRuntimeException(e);
                     }
@@ -68,8 +64,22 @@ public class LocalReconciliationFileStorageService {
             return List.of();
         }
         try (var stream = Files.list(imageDirectory)) {
-            return stream.filter(Files::isRegularFile).sorted().toList();
+            return stream.filter(Files::isRegularFile)
+                    .sorted(Comparator.comparingInt(this::extractStoredFileIndex))
+                    .toList();
         }
+    }
+
+    private int extractStoredFileIndex(Path path) {
+        String name = path.getFileName().toString();
+        int dash = name.indexOf('-');
+        if (dash > 0) {
+            try {
+                return Integer.parseInt(name.substring(0, dash));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return Integer.MAX_VALUE;
     }
 
     public Path saveResult(String reconciliationId, ReconciliationResponse response) throws IOException {
@@ -92,68 +102,6 @@ public class LocalReconciliationFileStorageService {
         return resultPath;
     }
 
-    public Path createUnmatchedImagesZip(String reconciliationId,
-                                         List<Path> unmatchedImagePaths,
-                                         List<String> originalFilenames) throws IOException {
-        validateReconciliationId(reconciliationId);
-        Objects.requireNonNull(unmatchedImagePaths, "Unmatched image paths are required");
-
-        Path zipPath = directoryFor(reconciliationId).resolve(UNMATCHED_ZIP_FILE_NAME);
-        Files.createDirectories(zipPath.getParent());
-
-        Set<String> usedEntryNames = new HashSet<>();
-        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipPath,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
-            for (int i = 0; i < unmatchedImagePaths.size(); i++) {
-                Path imagePath = unmatchedImagePaths.get(i);
-                if (imagePath == null || !Files.isRegularFile(imagePath)) {
-                    continue;
-                }
-
-                String filename = (originalFilenames != null && i < originalFilenames.size() && originalFilenames.get(i) != null && !originalFilenames.get(i).isBlank())
-                        ? originalFilenames.get(i)
-                        : imagePath.getFileName().toString();
-
-                String entryName = deduplicateZipEntryName(filename, usedEntryNames);
-                usedEntryNames.add(entryName);
-
-                ZipEntry zipEntry = new ZipEntry(entryName);
-                zos.putNextEntry(zipEntry);
-                Files.copy(imagePath, zos);
-                zos.closeEntry();
-            }
-        }
-
-        return zipPath;
-    }
-
-    private String deduplicateZipEntryName(String originalName, Set<String> usedNames) {
-        String baseName = originalName == null || originalName.isBlank()
-                ? "image.bin"
-                : Path.of(originalName).getFileName().toString();
-        baseName = baseName.replaceAll("[^A-Za-z0-9._-]", "_");
-        if (baseName.isBlank() || baseName.equals(".") || baseName.equals("..")) {
-            baseName = "image.bin";
-        }
-
-        if (!usedNames.contains(baseName)) {
-            return baseName;
-        }
-
-        int dotIndex = baseName.lastIndexOf('.');
-        String prefix = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
-        String extension = dotIndex > 0 ? baseName.substring(dotIndex) : "";
-
-        int count = 1;
-        while (true) {
-            String candidate = prefix + " (" + count + ")" + extension;
-            if (!usedNames.contains(candidate)) {
-                return candidate;
-            }
-            count++;
-        }
-    }
-
     public Path resolveStoredPath(String pathValue) {
         if (pathValue == null || pathValue.isBlank()) {
             throw new IllegalArgumentException("Stored file path is required");
@@ -166,23 +114,41 @@ public class LocalReconciliationFileStorageService {
         return candidate;
     }
 
+    public String contentTypeForPath(Path path) throws IOException {
+        Path safePath = resolveStoredPath(path.toString());
+        if (!Files.isRegularFile(safePath)) {
+            throw new IOException("Stored file does not exist: " + safePath);
+        }
+
+        String contentType = Files.probeContentType(safePath);
+        return contentType != null
+                ? contentType
+                : contentTypeFor(safePath.getFileName().toString());
+    }
+
     public MultipartFile asMultipartFile(Path path, String partName) throws IOException {
         Path safePath = resolveStoredPath(path.toString());
         if (!Files.isRegularFile(safePath)) {
             throw new IOException("Stored file does not exist: " + safePath);
         }
 
-        String filename = safePath.getFileName().toString();
+        String storedName = safePath.getFileName().toString();
+        String originalFilename = storedName.replaceFirst("^\\d+-", "");
         String contentType = Files.probeContentType(safePath);
         if (contentType == null) {
-            contentType = contentTypeFor(filename);
+            contentType = contentTypeFor(storedName);
         }
-        return new StoredMultipartFile(partName, filename, contentType, safePath);
+        return new StoredMultipartFile(partName, originalFilename, contentType, safePath);
     }
 
     private Path saveMultipartFile(Path directory, MultipartFile file, String fallbackName) throws IOException {
         Files.createDirectories(directory);
         String filename = safeFilename(file.getOriginalFilename(), fallbackName);
+        return saveMultipartFileWithName(directory, file, filename);
+    }
+
+    private Path saveMultipartFileWithName(Path directory, MultipartFile file, String filename) throws IOException {
+        Files.createDirectories(directory);
         Path destination = directory.resolve(filename).normalize();
         if (!destination.startsWith(directory.toAbsolutePath().normalize())) {
             throw new IOException("Invalid file name");

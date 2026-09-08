@@ -16,6 +16,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.http.MediaType;
 
 import java.nio.file.Path;
 import java.util.Base64;
@@ -146,8 +147,23 @@ class BarcodeReconciliationControllerContractTest {
 
         mockMvc.perform(get("/api/v1/barcode-reconciliations/{id}/download-unmatched", reconciliationId))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Content-Type", "application/zip"))
-                .andExpect(header().string("Content-Disposition", containsString("my_catalog_unmatched_images.zip")));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.images[0].imageIndex").value(1))
+                .andExpect(jsonPath("$.images[0].filename").value("item2.png"))
+                .andExpect(jsonPath("$.images[0].contentType").value("image/png"))
+                .andExpect(jsonPath("$.images[0].size").value(3))
+                .andExpect(jsonPath("$.images[0].downloadUrl")
+                        .value("/api/v1/barcode-reconciliations/rec-unmatched/download-unmatched/1"));
+
+        mockMvc.perform(get("/api/v1/barcode-reconciliations/{id}/download-unmatched/{imageIndex}", reconciliationId, 1))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(new byte[]{4, 5, 6}))
+                .andExpect(content().contentType(MediaType.IMAGE_PNG))
+                .andExpect(header().string("Content-Disposition", containsString("item2.png")));
+
+        mockMvc.perform(get("/api/v1/barcode-reconciliations/{id}/download-unmatched/{imageIndex}", reconciliationId, 0))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Unmatched image not found"));
     }
 
     @Test
@@ -179,4 +195,3 @@ class BarcodeReconciliationControllerContractTest {
         }
     }
 }
-

@@ -10,6 +10,18 @@ export interface BarcodeResult {
   previewUrl?: string;
 }
 
+export interface UnmatchedImageDownload {
+  imageIndex: number;
+  filename: string;
+  contentType: string;
+  size: number;
+  downloadUrl: string;
+}
+
+export interface UnmatchedImagesResponse {
+  images: UnmatchedImageDownload[];
+}
+
 export interface ExcelRowPreview {
   rowIndex: number;
   cells: Record<string, string>;

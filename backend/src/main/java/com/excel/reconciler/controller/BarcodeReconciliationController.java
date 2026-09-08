@@ -6,6 +6,8 @@ import com.excel.reconciler.model.BarcodeReconciliationSubmissionResponse;
 import com.excel.reconciler.model.BarcodeResult;
 import com.excel.reconciler.model.ReconciliationResponse;
 import com.excel.reconciler.model.ReconciliationStatus;
+import com.excel.reconciler.model.UnmatchedImageDownload;
+import com.excel.reconciler.model.UnmatchedImagesResponse;
 import com.excel.reconciler.service.BarcodeReconciliationPublisher;
 import com.excel.reconciler.service.BarcodeReconciliationRegistry;
 import com.excel.reconciler.service.LocalReconciliationFileStorageService;
@@ -39,10 +41,6 @@ public class BarcodeReconciliationController {
     @NonNull
     private static final MediaType XLSX_MEDIA_TYPE =
             Objects.requireNonNull(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
-
-    @NonNull
-    private static final MediaType ZIP_MEDIA_TYPE =
-            Objects.requireNonNull(MediaType.parseMediaType("application/zip"));
 
     private final BarcodeReconciliationPublisher reconciliationPublisher;
     private final BarcodeReconciliationRegistry reconciliationRegistry;
@@ -201,52 +199,140 @@ public class BarcodeReconciliationController {
                         .body(Map.of("error", "Reconciliation scan results are not available"));
             }
 
-            List<BarcodeResult> scanResults = response.getScanResults();
-            List<Path> imagePaths = record.imagePaths();
-            if (imagePaths.isEmpty()) {
-                imagePaths = fileStorage.getStoredImageFiles(reconciliationId);
-            }
-
-            List<Path> unmatchedImagePaths = new ArrayList<>();
-            List<String> originalFilenames = new ArrayList<>();
-
-            for (int i = 0; i < scanResults.size(); i++) {
-                BarcodeResult item = scanResults.get(i);
-                if (item.isMatched() == null || !item.isMatched()) {
-                    if (i < imagePaths.size()) {
-                        unmatchedImagePaths.add(imagePaths.get(i));
-                        originalFilenames.add(item.getFilename());
-                    }
-                }
-            }
-
-            if (unmatchedImagePaths.isEmpty()) {
+            List<UnmatchedImageFile> unmatchedImages = findUnmatchedImages(reconciliationId, record, response);
+            if (unmatchedImages.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "No unmatched images found"));
             }
 
-            Path zipPath = fileStorage.createUnmatchedImagesZip(reconciliationId, unmatchedImagePaths, originalFilenames);
-            Resource resource = new FileSystemResource(zipPath);
+            List<UnmatchedImageDownload> downloads = unmatchedImages.stream()
+                    .map(image -> new UnmatchedImageDownload(
+                            image.imageIndex(),
+                            image.filename(),
+                            image.contentType(),
+                            image.size(),
+                            "/api/v1/barcode-reconciliations/" + reconciliationId
+                                    + "/download-unmatched/" + image.imageIndex()))
+                    .toList();
 
-            String baseName = record.downloadFileName() != null
-                    ? record.downloadFileName().replaceFirst("(?i)(_highlighted)?\\.(xlsx|xls|csv|png|jpg|jpeg|webp)$", "")
-                    : "reconciliation";
-            String downloadName = baseName + "_unmatched_images.zip";
+            return ResponseEntity.ok(new UnmatchedImagesResponse(downloads));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to list unmatched images: " + messageFor(e)));
+        }
+    }
 
+    @GetMapping("/barcode-reconciliations/{reconciliationId}/download-unmatched/{imageIndex}")
+    public ResponseEntity<?> downloadUnmatchedImage(@PathVariable String reconciliationId,
+                                                     @PathVariable int imageIndex) {
+        try {
+            BarcodeReconciliationRegistry.Record record = reconciliationRegistry.require(reconciliationId);
+            if (record.status() != ReconciliationStatus.COMPLETED) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                        "error", "Reconciliation result is not ready",
+                        "status", record.status().name()
+                ));
+            }
+
+            ReconciliationResponse response = record.result();
+            if (response == null || response.getScanResults() == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "Reconciliation scan results are not available"));
+            }
+
+            UnmatchedImageFile image = findUnmatchedImages(reconciliationId, record, response).stream()
+                    .filter(candidate -> candidate.imageIndex() == imageIndex)
+                    .findFirst()
+                    .orElse(null);
+            if (image == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "Unmatched image not found"));
+            }
+
+            Resource resource = new FileSystemResource(image.path());
             String disposition = ContentDisposition.attachment()
-                    .filename(downloadName, StandardCharsets.UTF_8)
+                    .filename(image.filename(), StandardCharsets.UTF_8)
                     .build()
                     .toString();
+            MediaType contentType = parseMediaTypeOrBinary(image.contentType());
 
             return ResponseEntity.ok()
-                    .contentType(ZIP_MEDIA_TYPE)
+                    .contentType(contentType)
+                    .contentLength(image.size())
                     .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
                     .body(resource);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to package unmatched images: " + messageFor(e)));
+                    .body(Map.of("error", "Failed to download unmatched image: " + messageFor(e)));
         }
+    }
+
+    private List<UnmatchedImageFile> findUnmatchedImages(
+            String reconciliationId,
+            BarcodeReconciliationRegistry.Record record,
+            ReconciliationResponse response) throws Exception {
+        List<Path> imagePaths = record.imagePaths();
+        if (imagePaths.isEmpty()) {
+            imagePaths = fileStorage.getStoredImageFiles(reconciliationId);
+        }
+
+        List<UnmatchedImageFile> unmatchedImages = new ArrayList<>();
+        List<BarcodeResult> scanResults = response.getScanResults();
+        for (int i = 0; i < scanResults.size(); i++) {
+            BarcodeResult item = scanResults.get(i);
+            if (item == null || (item.isMatched() != null && item.isMatched())) {
+                continue;
+            }
+            if (i >= imagePaths.size()) {
+                continue;
+            }
+
+            Path imagePath = fileStorage.resolveStoredPath(imagePaths.get(i).toString());
+            if (!Files.isRegularFile(imagePath)) {
+                continue;
+            }
+
+            String filename = safeDownloadFilename(item.getFilename(), imagePath);
+            unmatchedImages.add(new UnmatchedImageFile(
+                    i,
+                    imagePath,
+                    filename,
+                    fileStorage.contentTypeForPath(imagePath),
+                    Files.size(imagePath)));
+        }
+        return unmatchedImages;
+    }
+
+    private String safeDownloadFilename(String originalFilename, Path imagePath) {
+        String candidate = originalFilename;
+        if (candidate == null || candidate.isBlank()) {
+            candidate = imagePath.getFileName().toString();
+        }
+        int separatorIndex = Math.max(candidate.lastIndexOf('/'), candidate.lastIndexOf('\\'));
+        String basename = separatorIndex >= 0 ? candidate.substring(separatorIndex + 1) : candidate;
+        basename = basename.replaceFirst("^\\d+-", "");
+        String filename = basename.replaceAll("[^A-Za-z0-9._-]", "_");
+        return filename.isBlank() || filename.equals(".") || filename.equals("..")
+                ? "image.bin"
+                : filename;
+    }
+
+    private MediaType parseMediaTypeOrBinary(String contentType) {
+        try {
+            return MediaType.parseMediaType(contentType);
+        } catch (IllegalArgumentException e) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+    }
+
+    private record UnmatchedImageFile(int imageIndex,
+                                      Path path,
+                                      String filename,
+                                      String contentType,
+                                      long size) {
     }
 
     private String messageFor(Exception exception) {

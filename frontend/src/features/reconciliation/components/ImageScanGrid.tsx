@@ -12,7 +12,10 @@ import {
   Loader2,
 } from 'lucide-react';
 import type { BarcodeResult } from '@/features/reconciliation/model/types';
-import { downloadUnmatchedImages } from '@/features/reconciliation/api/reconciliationApi';
+import {
+  downloadUnmatchedImage,
+  downloadUnmatchedImages,
+} from '@/features/reconciliation/api/reconciliationApi';
 import { useTranslation } from '@/shared/i18n/i18n';
 
 interface ImageScanGridProps {
@@ -20,7 +23,6 @@ interface ImageScanGridProps {
   matchedCodes: string[];
   imageFiles?: File[];
   reconciliationId?: string;
-  downloadFileName?: string;
 }
 
 export const ImageScanGrid = ({
@@ -28,11 +30,11 @@ export const ImageScanGrid = ({
   matchedCodes,
   imageFiles,
   reconciliationId,
-  downloadFileName,
 }: ImageScanGridProps) => {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadingImageIndex, setDownloadingImageIndex] = useState<number | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<{
     url?: string;
@@ -154,15 +156,29 @@ export const ImageScanGrid = ({
     setIsDownloading(true);
     setDownloadError(null);
     try {
-      const baseName = downloadFileName
-        ? downloadFileName.replace(/(?:_highlighted)?\.(?:xlsx|xls|csv|png|jpg|jpeg|webp)$/i, '')
-        : 'reconciliation';
-      const zipFileName = `${baseName}_unmatched_images.zip`;
-      await downloadUnmatchedImages(reconciliationId, zipFileName);
+      await downloadUnmatchedImages(reconciliationId);
     } catch (error: unknown) {
       setDownloadError(error instanceof Error ? error.message : t('unmatched.downloadError'));
     } finally {
       setIsDownloading(false);
+    }
+  };
+
+  const handleDownloadImage = async (item: BarcodeResult, imageIndex: number) => {
+    if (
+      !reconciliationId ||
+      isDownloading ||
+      downloadingImageIndex !== null
+    ) return;
+
+    setDownloadingImageIndex(imageIndex);
+    setDownloadError(null);
+    try {
+      await downloadUnmatchedImage(reconciliationId, imageIndex, item.filename);
+    } catch (error: unknown) {
+      setDownloadError(error instanceof Error ? error.message : t('unmatched.downloadError'));
+    } finally {
+      setDownloadingImageIndex(null);
     }
   };
 
@@ -198,7 +214,7 @@ export const ImageScanGrid = ({
                 <Download className="w-3.5 h-3.5 text-[#FB7185]" />
               )}
               <span>
-                {isDownloading ? t('unmatched.downloading') : t('unmatched.download')}
+                {isDownloading ? t('unmatched.downloadingAll') : t('unmatched.downloadAllRaw')}
               </span>
               <span className="px-1.5 py-0.5 rounded-full bg-[#FB7185]/20 text-[#FB7185] text-[10px] font-bold">
                 {unmatchedResults.length}
@@ -250,6 +266,9 @@ export const ImageScanGrid = ({
           filteredResults.map((item, index) => {
             const barcodeDisplay = getDisplayBarcode(item);
             const isFailed = !item.success || !barcodeDisplay;
+            const sourceIndex = scanResults.indexOf(item);
+            const imageIndex = sourceIndex >= 0 ? sourceIndex : index;
+            const isImageDownloading = downloadingImageIndex === imageIndex;
 
             const onCardClick = () => {
               const file = getFileForItem(item, index);
@@ -352,23 +371,43 @@ export const ImageScanGrid = ({
                   </div>
                 </div>
 
-                {/* Footer with Filename and Click-to-preview button */}
-                <div className="text-[11px] text-[#737887] flex items-center justify-between pt-2.5 border-t border-[#26272E] mt-3">
-                  <span className="truncate max-w-[110px]" title={item.filename}>
+                {/* Footer with filename, raw download, and click-to-preview controls */}
+                <div className="flex min-w-0 items-center justify-between gap-2 pt-2.5 border-t border-[#26272E] mt-3">
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-[#737887]" title={item.filename}>
                     {item.filename}
                   </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCardClick();
-                    }}
-                    className="inline-flex min-h-11 items-center gap-1 text-[10px] text-[#A0A5B5] group-hover:text-[#A0E3E2] hover:text-[#A0E3E2] transition cursor-pointer"
-                    title={t('unmatched.preview')}
-                  >
-                    <Eye className="w-3 h-3" />
-                    {t('unmatched.preview')}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDownloadImage(item, imageIndex);
+                      }}
+                      disabled={!reconciliationId || isDownloading || downloadingImageIndex !== null}
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-[#A0A5B5] hover:bg-[#2B2D35] hover:text-[#A0E3E2] transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                      title={t('unmatched.downloadRaw')}
+                      aria-label={t('unmatched.downloadRaw')}
+                    >
+                      {isImageDownloading ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCardClick();
+                      }}
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md text-[10px] text-[#A0A5B5] group-hover:text-[#A0E3E2] hover:bg-[#2B2D35] hover:text-[#A0E3E2] transition cursor-pointer sm:min-w-0 sm:px-1"
+                      title={t('unmatched.preview')}
+                      aria-label={t('unmatched.preview')}
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span className="hidden sm:inline">{t('unmatched.preview')}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             );

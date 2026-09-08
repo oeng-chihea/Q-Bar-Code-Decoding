@@ -24,3 +24,16 @@ test('models the active Gemini barcode decoder response type', () => {
   assert.match(types, /decoderType: 'ZXING' \| 'GEMINI_AI' \| 'FAILED';/);
   assert.doesNotMatch(types, /'OLLAMA_AI'/);
 });
+
+test('models raw unmatched image download metadata', () => {
+  const typePath = fileURLToPath(new URL(
+    '../src/features/reconciliation/model/types.ts',
+    import.meta.url,
+  ));
+  const types = readFileSync(typePath, 'utf8');
+
+  assert.match(types, /export interface UnmatchedImageDownload/);
+  assert.match(types, /imageIndex: number;/);
+  assert.match(types, /downloadUrl: string;/);
+  assert.match(types, /export interface UnmatchedImagesResponse/);
+});

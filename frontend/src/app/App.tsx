@@ -145,7 +145,6 @@ export function App() {
               matchedCodes={results.matchedCodes}
               imageFiles={imageFiles}
               reconciliationId={reconciliationId || ''}
-              downloadFileName={results.downloadFileName}
             />
           </div>
         )}

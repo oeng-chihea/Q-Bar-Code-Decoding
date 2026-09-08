@@ -51,34 +51,72 @@ class LocalReconciliationFileStorageServiceTest {
     }
 
     @Test
-    void createsUnmatchedImagesZipAndHandlesDuplicateFilenames() throws Exception {
+    void listsStoredImagesInUploadOrderAndReportsTheirContentType() throws Exception {
         LocalReconciliationFileStorageService storage =
                 new LocalReconciliationFileStorageService(temporaryDirectory.toString());
 
-        Path image1 = temporaryDirectory.resolve("img1.png");
-        Path image2 = temporaryDirectory.resolve("img2.png");
-        Files.write(image1, new byte[]{10, 20});
-        Files.write(image2, new byte[]{30, 40});
+        MockMultipartFile firstImage = new MockMultipartFile(
+                "images", "first.png", "image/png", new byte[]{10, 20});
+        MockMultipartFile secondImage = new MockMultipartFile(
+                "images", "second.jpg", "image/jpeg", new byte[]{30, 40});
 
-        Path zipPath = storage.createUnmatchedImagesZip(
-                "rec-2",
-                List.of(image1, image2),
-                List.of("barcode.png", "barcode.png")
-        );
+        List<Path> savedPaths = storage.saveImageFiles("rec-2", List.of(firstImage, secondImage));
+        List<Path> storedPaths = storage.getStoredImageFiles("rec-2");
 
-        org.junit.jupiter.api.Assertions.assertTrue(Files.isRegularFile(zipPath));
+        assertEquals(savedPaths, storedPaths);
+        assertEquals("image/png", storage.contentTypeForPath(storedPaths.get(0)));
+        assertEquals("image/jpeg", storage.contentTypeForPath(storedPaths.get(1)));
+        assertArrayEquals(new byte[]{10, 20}, Files.readAllBytes(storedPaths.get(0)));
+        assertArrayEquals(new byte[]{30, 40}, Files.readAllBytes(storedPaths.get(1)));
+    }
 
-        java.util.List<String> entryNames = new java.util.ArrayList<>();
-        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(Files.newInputStream(zipPath))) {
-            java.util.zip.ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                entryNames.add(entry.getName());
-                zis.closeEntry();
-            }
-        }
+    @Test
+    void keepsDuplicateUploadNamesInSeparateStoredFiles() throws Exception {
+        LocalReconciliationFileStorageService storage =
+                new LocalReconciliationFileStorageService(temporaryDirectory.toString());
 
-        assertEquals(2, entryNames.size());
-        assertEquals("barcode.png", entryNames.get(0));
-        assertEquals("barcode (1).png", entryNames.get(1));
+        MockMultipartFile firstImage = new MockMultipartFile(
+                "images", "duplicate.png", "image/png", new byte[]{1, 2});
+        MockMultipartFile secondImage = new MockMultipartFile(
+                "images", "duplicate.png", "image/png", new byte[]{3, 4});
+
+        List<Path> savedPaths = storage.saveImageFiles("rec-duplicates", List.of(firstImage, secondImage));
+
+        assertEquals(2, savedPaths.stream().distinct().count());
+        assertArrayEquals(new byte[]{1, 2}, Files.readAllBytes(savedPaths.get(0)));
+        assertArrayEquals(new byte[]{3, 4}, Files.readAllBytes(savedPaths.get(1)));
+    }
+
+    @Test
+    void asMultipartFileStripsStorageIndexPrefix() throws Exception {
+        LocalReconciliationFileStorageService storage =
+                new LocalReconciliationFileStorageService(temporaryDirectory.toString());
+
+        MockMultipartFile image = new MockMultipartFile(
+                "images", "3.jpg", "image/jpeg", new byte[]{1, 2, 3});
+
+        List<Path> savedPaths = storage.saveImageFiles("rec-prefix", List.of(image));
+        org.springframework.web.multipart.MultipartFile loaded = storage.asMultipartFile(savedPaths.get(0), "images");
+
+        assertEquals("3.jpg", loaded.getOriginalFilename());
+    }
+
+    @Test
+    void listsStoredImagesInCorrectNumericalOrderBeyondTenImages() throws Exception {
+        LocalReconciliationFileStorageService storage =
+                new LocalReconciliationFileStorageService(temporaryDirectory.toString());
+
+        List<org.springframework.web.multipart.MultipartFile> images = java.util.stream.IntStream.range(0, 12)
+                .mapToObj(i -> (org.springframework.web.multipart.MultipartFile) new MockMultipartFile("images", "item-" + i + ".png", "image/png", new byte[]{(byte) i}))
+                .toList();
+
+        List<Path> savedPaths = storage.saveImageFiles("rec-many", images);
+        List<Path> storedPaths = storage.getStoredImageFiles("rec-many");
+
+        assertEquals(savedPaths, storedPaths);
+        assertEquals(12, storedPaths.size());
+        assertEquals("0-item-0.png", storedPaths.get(0).getFileName().toString());
+        assertEquals("10-item-10.png", storedPaths.get(10).getFileName().toString());
+        assertEquals("11-item-11.png", storedPaths.get(11).getFileName().toString());
     }
 }
