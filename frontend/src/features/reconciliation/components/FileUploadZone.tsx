@@ -135,7 +135,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           onDragLeave={() => setExcelDragOver(false)}
           onDrop={handleExcelDrop}
           onClick={() => !excelFile && excelInputRef.current?.click()}
-          className={`relative rounded-lg border-2 border-dashed p-5 transition-all cursor-pointer flex flex-col justify-between min-h-[250px] ${
+          className={`relative min-w-0 rounded-lg border-2 border-dashed p-4 transition-all cursor-pointer flex flex-col justify-between min-h-[220px] sm:min-h-[250px] sm:p-5 ${
             excelDragOver
               ? 'border-[#34D399] bg-[#143827]/30'
               : excelFile
@@ -157,13 +157,13 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           />
 
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#34D399] uppercase tracking-wider">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[#34D399] uppercase tracking-wider">
                 <FileImage className="w-4 h-4" />
                 {t('upload.step1')}
               </div>
               {excelFile && (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36]">
+                <span className="inline-flex max-w-full flex-wrap items-center gap-1 text-xs font-semibold px-2 py-1 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36]">
                   <FileCheck className="w-3.5 h-3.5" /> {t('upload.spreadsheetReady')}
                 </span>
               )}
@@ -182,7 +182,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                     e.stopPropagation();
                     setExcelErrorKey(null);
                   }}
-                  className="text-[#D1D5DB] hover:text-white p-0.5"
+                  className="min-h-11 min-w-11 flex items-center justify-center text-[#D1D5DB] hover:text-white p-0.5"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -203,8 +203,8 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="bg-[#16171B] border border-[#2B2D35] rounded-md p-3.5 flex items-center justify-between">
-                <div className="flex items-center gap-3 overflow-hidden">
+              <div className="bg-[#16171B] border border-[#2B2D35] rounded-md p-3.5 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3 overflow-hidden">
                   <div className="p-1 rounded bg-[#143827] text-[#34D399] shrink-0 border border-[#1E4D36] w-10 h-10 flex items-center justify-center overflow-hidden">
                     {excelPreviewUrl ? (
                       <img
@@ -234,7 +234,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                     onSelectExcel(null);
                     setExcelErrorKey(null);
                   }}
-                  className="p-1.5 rounded text-[#8E929E] hover:text-[#FB7185] hover:bg-[#461B21] transition cursor-pointer"
+                  className="min-h-11 min-w-11 flex shrink-0 items-center justify-center rounded text-[#8E929E] hover:text-[#FB7185] hover:bg-[#461B21] transition cursor-pointer"
                   title={t('upload.remove')}
                   aria-label={t('upload.remove')}
                 >
@@ -259,7 +259,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           onDragLeave={() => setImageDragOver(false)}
           onDrop={handleImageDrop}
           onClick={() => imageFiles.length === 0 && imageInputRef.current?.click()}
-          className={`relative rounded-lg border-2 border-dashed p-5 transition-all flex flex-col justify-between min-h-[250px] ${
+          className={`relative min-w-0 rounded-lg border-2 border-dashed p-4 transition-all flex flex-col justify-between min-h-[220px] sm:min-h-[250px] sm:p-5 ${
             imageDragOver
               ? 'border-[#A0E3E2] bg-[#12403F]/30'
               : imageFiles.length > 0
@@ -283,14 +283,14 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           />
 
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#A0E3E2] uppercase tracking-wider">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[#A0E3E2] uppercase tracking-wider">
                 <Images className="w-4 h-4" />
                 {t('upload.step2')}
               </div>
               {imageFiles.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-[#18393C] text-[#A0E3E2] border border-[#23585D]">
+                <div className="flex max-w-full flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold px-2 py-1 rounded bg-[#18393C] text-[#A0E3E2] border border-[#23585D]">
                     {imageFiles.length} {imageFiles.length === 1 ? t('upload.image') : t('upload.images')} (
                     {formatFileSize(totalImageSize)})
                   </span>
@@ -300,7 +300,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                       e.stopPropagation();
                       handleClearAllImages();
                     }}
-                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-[#8E929E] hover:text-[#FB7185] hover:bg-[#461B21] transition cursor-pointer border border-transparent hover:border-[#FB7185]/30"
+                    className="min-h-11 flex items-center gap-1 px-2 rounded text-xs text-[#8E929E] hover:text-[#FB7185] hover:bg-[#461B21] transition cursor-pointer border border-transparent hover:border-[#FB7185]/30"
                     title={t('upload.clearAll')}
                     aria-label={t('upload.clearAll')}
                   >
@@ -324,9 +324,9 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+              <div className="min-w-0 space-y-3" onClick={(e) => e.stopPropagation()}>
                 {/* Responsive thumbnail grid showing each image with remove button */}
-                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2 max-h-40 overflow-y-auto pr-1">
+                <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2 max-h-52 sm:max-h-40 overflow-y-auto pr-1">
                   {imagePreviews.map((preview, idx) => (
                     <div
                       key={`${preview.file.name}-${preview.file.size}-${preview.file.lastModified}-${idx}`}
@@ -349,7 +349,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                           e.stopPropagation();
                           handleRemoveSingleImage(idx);
                         }}
-                        className="absolute top-1 right-1 p-0.5 rounded-full bg-[#121316]/90 text-[#D1D5DB] hover:text-white hover:bg-[#FB7185] active:scale-90 transition-all cursor-pointer shadow-md z-10 opacity-80 group-hover:opacity-100"
+                        className="absolute top-1 right-1 min-h-11 min-w-11 flex items-center justify-center rounded-full bg-[#121316]/90 text-[#D1D5DB] hover:text-white hover:bg-[#FB7185] active:scale-90 transition-all cursor-pointer shadow-md z-10 opacity-80 group-hover:opacity-100"
                         title={`${t('upload.remove')}: ${preview.file.name}`}
                         aria-label={`${t('upload.remove')}: ${preview.file.name}`}
                       >
@@ -367,7 +367,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                 <button
                   type="button"
                   onClick={() => imageInputRef.current?.click()}
-                  className="w-full py-1.5 text-xs text-center font-medium text-[#A0E3E2] hover:text-white bg-[#172D30] rounded border border-[#23585D] hover:bg-[#1E3B3E] transition cursor-pointer flex items-center justify-center gap-1.5"
+                  className="w-full min-h-11 py-1.5 text-xs text-center font-medium text-[#A0E3E2] hover:text-white bg-[#172D30] rounded border border-[#23585D] hover:bg-[#1E3B3E] transition cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{t('upload.addMore')}</span>
@@ -384,8 +384,8 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
       </div>
 
       {/* Start Button & Progress */}
-      <div className="bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="text-left text-xs text-[#8E929E]">
+      <div className="bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-4 flex flex-col items-stretch sm:flex-row sm:items-center justify-between gap-4">
+        <div className="min-w-0 text-left text-xs text-[#8E929E]">
           <div>
             <span className="font-semibold text-[#F3F4F6]">{t('upload.readySummary')}</span>{' '}
             {excelFile
@@ -398,7 +398,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         <button
           onClick={onStartReconcile}
           disabled={!excelFile || imageFiles.length === 0 || isProcessing}
-          className="w-full md:w-auto px-6 py-2.5 rounded-md font-semibold text-xs text-[#0E1726] bg-[#A0E3E2] hover:bg-[#8EE0DF] active:bg-[#7AD8D7] disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full min-h-11 sm:w-auto px-6 py-2.5 rounded-md font-semibold text-xs text-[#0E1726] bg-[#A0E3E2] hover:bg-[#8EE0DF] active:bg-[#7AD8D7] disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
         >
           {isProcessing ? (
             <>
