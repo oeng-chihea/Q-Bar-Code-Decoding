@@ -24,7 +24,7 @@ class ExcelImageExtractorServiceTest {
                 null);
         when(gemini.generateJson(any(), any(), any(), any())).thenReturn(jsonResponse);
         when(gemini.generateJson(any(), any(), any(), any(), any())).thenReturn(jsonResponse);
-        when(gemini.getConfiguredModel()).thenReturn("gemini-3.5-flash-lite");
+        when(gemini.getConfiguredModel()).thenReturn("gemini-flash-lite-latest");
 
         ExcelImageExtractorService service = new ExcelImageExtractorService(gemini, new ObjectMapper());
 

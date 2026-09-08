@@ -12,6 +12,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -27,13 +28,13 @@ import java.util.concurrent.Executor;
 @Service
 public class GeminiVisionService {
     private static final Logger log = LoggerFactory.getLogger(GeminiVisionService.class);
-    private static final String DEFAULT_MODEL = "gemini-3.5-flash-lite";
+    private static final String DEFAULT_MODEL = "gemini-flash-lite-latest";
     private static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
     @Value("${gemini.api.key:}")
     private String apiKey;
 
-    @Value("${gemini.api.model:gemini-3.5-flash-lite}")
+    @Value("${gemini.api.model:gemini-flash-lite-latest}")
     private String model = DEFAULT_MODEL;
 
     @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models}")
@@ -203,14 +204,14 @@ public class GeminiVisionService {
             String configured = getConfiguredModel();
             List<String> modelsToTry = new ArrayList<>();
             modelsToTry.add(configured);
+            if (!modelsToTry.contains("gemini-flash-lite-latest")) {
+                modelsToTry.add("gemini-flash-lite-latest");
+            }
             if (!modelsToTry.contains("gemini-3.5-flash-lite")) {
                 modelsToTry.add("gemini-3.5-flash-lite");
             }
             if (!modelsToTry.contains("gemini-3.6-flash")) {
                 modelsToTry.add("gemini-3.6-flash");
-            }
-            if (!modelsToTry.contains("gemini-flash-lite-latest")) {
-                modelsToTry.add("gemini-flash-lite-latest");
             }
             if (!modelsToTry.contains("gemini-1.5-flash")) {
                 modelsToTry.add("gemini-1.5-flash");
@@ -221,13 +222,12 @@ public class GeminiVisionService {
 
             for (String targetModel : modelsToTry) {
                 String targetUrl = String.format("%s/%s:generateContent", configuredBaseUrl(), targetModel);
-                int maxAttempts = modelsToTry.indexOf(targetModel) == 0 ? 2 : 1;
-                for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
                     HttpRequest request = HttpRequest.newBuilder()
                             .uri(URI.create(targetUrl))
                             .header("Content-Type", "application/json")
                             .header("x-goog-api-key", activeKey)
-                            .timeout(Duration.ofMinutes(2))
+                            .timeout(Duration.ofSeconds(10))
                             .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                             .build();
 
@@ -237,28 +237,22 @@ public class GeminiVisionService {
                         break;
                     }
 
-                    if ((response.statusCode() == 503 || response.statusCode() == 429) && attempt < maxAttempts) {
-                        long backoff = attempt * 1200L;
-                        log.warn("Gemini model {} returned status {}. Retrying attempt {}/{} in {}ms...",
-                                targetModel, response.statusCode(), attempt + 1, maxAttempts, backoff);
-                        try {
-                            Thread.sleep(backoff);
-                        } catch (InterruptedException ignored) {
-                            Thread.currentThread().interrupt();
-                        }
-                        continue;
+                    // On 503 (High demand) or 404/429, instantly failover to next model without wasting time retrying
+                    if (modelsToTry.indexOf(targetModel) < modelsToTry.size() - 1) {
+                        String fallbackModel = modelsToTry.get(modelsToTry.indexOf(targetModel) + 1);
+                        log.warn("Gemini model {} unavailable (status {}). Instantly failing over to fallback model {}...",
+                                targetModel, response.statusCode(), fallbackModel);
                     }
-                    break;
-                }
-
-                if (response != null && response.statusCode() >= 200 && response.statusCode() < 300) {
-                    break;
-                }
-
-                if (modelsToTry.indexOf(targetModel) < modelsToTry.size() - 1) {
-                    String fallbackModel = modelsToTry.get(modelsToTry.indexOf(targetModel) + 1);
-                    log.warn("Gemini model {} unavailable (status {}). Switching to fallback model {}...",
-                            targetModel, response != null ? response.statusCode() : 0, fallbackModel);
+                } catch (HttpTimeoutException e) {
+                    if (modelsToTry.indexOf(targetModel) < modelsToTry.size() - 1) {
+                        String fallbackModel = modelsToTry.get(modelsToTry.indexOf(targetModel) + 1);
+                        log.warn("Gemini model {} timed out after 10s. Instantly failing over to fallback model {}...",
+                                targetModel, fallbackModel);
+                    } else {
+                        log.warn("Gemini model {} timed out after 10s", targetModel);
+                    }
+                } catch (Exception e) {
+                    log.warn("Gemini model {} request error: {}. Trying fallback...", targetModel, e.getMessage());
                 }
             }
 
