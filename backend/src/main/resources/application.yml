@@ -22,6 +22,7 @@ gemini:
     key: ${GEMINI_API_KEY:}
     model: ${GEMINI_API_MODEL:gemini-flash-lite-latest}
     url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta/models}
+    timeout-seconds: ${GEMINI_API_TIMEOUT_SECONDS:40}
 
 
 app:

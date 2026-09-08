@@ -40,6 +40,9 @@ public class GeminiVisionService {
     @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models}")
     private String baseUrl = DEFAULT_BASE_URL;
 
+    @Value("${gemini.api.timeout-seconds:40}")
+    private int timeoutSeconds = 40;
+
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final Executor executor;
@@ -60,7 +63,7 @@ public class GeminiVisionService {
     public GeminiVisionService(ObjectMapper objectMapper,
                                @Qualifier("imageDecoderExecutor") Executor executor) {
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(15))
+                .connectTimeout(Duration.ofSeconds(20))
                 .build();
         this.objectMapper = objectMapper;
         this.executor = executor;
@@ -227,7 +230,7 @@ public class GeminiVisionService {
                             .uri(URI.create(targetUrl))
                             .header("Content-Type", "application/json")
                             .header("x-goog-api-key", activeKey)
-                            .timeout(Duration.ofSeconds(10))
+                            .timeout(Duration.ofSeconds(timeoutSeconds))
                             .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                             .build();
 
@@ -246,10 +249,10 @@ public class GeminiVisionService {
                 } catch (HttpTimeoutException e) {
                     if (modelsToTry.indexOf(targetModel) < modelsToTry.size() - 1) {
                         String fallbackModel = modelsToTry.get(modelsToTry.indexOf(targetModel) + 1);
-                        log.warn("Gemini model {} timed out after 10s. Instantly failing over to fallback model {}...",
-                                targetModel, fallbackModel);
+                        log.warn("Gemini model {} timed out after {}s. Instantly failing over to fallback model {}...",
+                                targetModel, timeoutSeconds, fallbackModel);
                     } else {
-                        log.warn("Gemini model {} timed out after 10s", targetModel);
+                        log.warn("Gemini model {} timed out after {}s", targetModel, timeoutSeconds);
                     }
                 } catch (Exception e) {
                     log.warn("Gemini model {} request error: {}. Trying fallback...", targetModel, e.getMessage());
