@@ -56,13 +56,13 @@ export const ExcelPreviewTable = ({
   };
 
   return (
-    <div className="bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-5 text-left space-y-4">
+    <div className="min-w-0 bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-4 sm:p-5 text-left space-y-4">
       {/* Header Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#26272E] pb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-start gap-2">
           <FileSpreadsheet className="w-5 h-5 text-[#34D399]" />
-          <div>
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider m-0 flex items-center gap-2 flex-wrap">
+          <div className="min-w-0">
+            <h3 className="break-words text-sm font-bold text-white uppercase tracking-wider m-0 flex items-center gap-2 flex-wrap">
               <span>{t('preview.title')}</span>
               {activeSheetName && (
                 <span className="text-xs px-2 py-0.5 rounded bg-[#1A2333] text-[#818CF8] border border-[#27354E] font-medium flex items-center gap-1">
@@ -79,17 +79,18 @@ export const ExcelPreviewTable = ({
                 </span>
               )}
             </h3>
-            <p className="text-xs text-[#8E929E] m-0 mt-0.5">
+            <p className="break-words text-xs text-[#8E929E] m-0 mt-0.5">
               {t('preview.showing', { count: previewRows.length, matched: matchedCount })}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-stretch gap-2 sm:w-auto">
           {/* Toggle Filter */}
           <button
+            type="button"
             onClick={() => setOnlyMatched(!onlyMatched)}
-            className={`px-3 py-1.5 rounded-md border text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+            className={`min-h-11 flex-1 px-3 py-1.5 rounded-md border text-xs font-medium transition cursor-pointer flex items-center justify-center gap-1.5 sm:flex-none ${
               onlyMatched
                 ? 'bg-[#461B21] text-[#FB7185] border-[#5C2028]'
                 : 'bg-[#16171B] text-[#8E929E] border-[#2B2D35] hover:text-[#F3F4F6]'
@@ -101,8 +102,9 @@ export const ExcelPreviewTable = ({
 
           {/* Download Action */}
           <button
+            type="button"
             onClick={() => void handleDownload()}
-            className="px-3.5 py-1.5 rounded-md border border-[#A0E3E2]/40 text-xs font-semibold text-[#0E1726] bg-[#A0E3E2] hover:bg-[#8EE0DF] transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+            className="min-h-11 flex-1 px-3.5 py-1.5 rounded-md border border-[#A0E3E2]/40 text-xs font-semibold text-[#0E1726] bg-[#A0E3E2] hover:bg-[#8EE0DF] transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer sm:flex-none"
             disabled={isDownloading}
           >
             <Download className="w-3.5 h-3.5" />
@@ -115,8 +117,8 @@ export const ExcelPreviewTable = ({
       )}
 
       {/* Spreadsheet Table */}
-      <div className="overflow-x-auto rounded-md border border-[#2B2D35] bg-[#16171B]">
-        <table className="w-full text-xs text-left border-collapse">
+      <div className="min-w-0 overflow-x-auto rounded-md border border-[#2B2D35] bg-[#16171B]">
+        <table className="min-w-[640px] w-full text-xs text-left border-collapse">
           <thead>
             <tr className="bg-[#1C1D22] border-b border-[#2B2D35] text-[#8E929E]">
               <th className="py-2.5 px-3.5 font-semibold w-12 text-[#737887] border-r border-[#2B2D35]">

@@ -39,3 +39,21 @@ test('upload workflow stacks cards and exposes touch-sized actions', () => {
   assert.match(source, /min-h-11/);
   assert.match(source, /sm:flex-row/);
 });
+
+test('results metrics preserve a two-column phone layout', () => {
+  const source = readSource('../src/features/reconciliation/components/ReconciliationStats.tsx');
+
+  assert.match(source, /grid-cols-2 lg:grid-cols-4/);
+  assert.match(source, /min-w-0/);
+  assert.match(source, /break-words/);
+});
+
+test('spreadsheet controls wrap and table overflow stays inside its panel', () => {
+  const source = readSource('../src/features/reconciliation/components/ExcelPreviewTable.tsx');
+
+  assert.match(source, /p-4 sm:p-5/);
+  assert.match(source, /flex-col sm:flex-row/);
+  assert.match(source, /min-h-11/);
+  assert.match(source, /min-w-0 overflow-x-auto/);
+  assert.match(source, /min-w-\[640px\]/);
+});
