@@ -20,7 +20,7 @@ spring:
 gemini:
   api:
     key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_API_MODEL:gemini-flash-lite-latest}
+    model: ${GEMINI_API_MODEL:gemini-3.5-flash-lite}
     url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta/models}
 
 
