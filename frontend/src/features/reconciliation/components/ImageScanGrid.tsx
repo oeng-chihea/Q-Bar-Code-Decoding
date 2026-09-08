@@ -167,29 +167,30 @@ export const ImageScanGrid = ({
   };
 
   return (
-    <div className="bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-5 text-left space-y-4">
+    <div className="min-w-0 bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-4 sm:p-5 text-left space-y-4">
       {/* Header Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#26272E] pb-4">
-        <div className="flex items-center gap-2">
-          <ScanLine className="w-5 h-5 text-[#FB7185]" />
-          <div>
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider m-0">
+        <div className="flex min-w-0 items-start gap-2">
+          <ScanLine className="w-5 h-5 shrink-0 text-[#FB7185]" />
+          <div className="min-w-0">
+            <h3 className="break-words text-sm font-bold text-white uppercase tracking-wider m-0">
               {t('unmatched.title')}
             </h3>
-            <p className="text-xs text-[#8E929E] m-0 mt-0.5">
+            <p className="break-words text-xs text-[#8E929E] m-0 mt-0.5">
               {t('unmatched.subtitle')}
             </p>
           </div>
         </div>
 
         {/* Right Action Controls */}
-        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:w-auto sm:items-center">
           {/* Download Unmatched Images */}
           {unmatchedResults.length > 0 && (
             <button
+              type="button"
               onClick={() => void handleDownloadUnmatched()}
               disabled={isDownloading || !reconciliationId}
-              className="px-3.5 py-1.5 rounded-md border border-[#FB7185]/40 text-xs font-semibold text-white bg-[#461B21] hover:bg-[#5C2028] transition shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              className="min-h-11 w-full px-3.5 py-1.5 rounded-md border border-[#FB7185]/40 text-xs font-semibold text-white bg-[#461B21] hover:bg-[#5C2028] transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap sm:w-auto"
             >
               {isDownloading ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FB7185]" />
@@ -207,14 +208,14 @@ export const ImageScanGrid = ({
 
           {/* Search */}
           {unmatchedResults.length > 0 && (
-            <div className="relative">
+            <div className="relative w-full sm:w-56">
               <Search className="w-3.5 h-3.5 text-[#737887] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t('unmatched.search')}
-                className="pl-8 pr-3 py-1.5 rounded-md bg-[#16171B] border border-[#2B2D35] text-xs text-[#F3F4F6] placeholder-[#737887] focus:outline-none focus:border-[#FB7185] w-full sm:w-56"
+                className="min-h-11 w-full pl-8 pr-3 py-1.5 rounded-md bg-[#16171B] border border-[#2B2D35] text-xs text-[#F3F4F6] placeholder-[#737887] focus:outline-none focus:border-[#FB7185]"
               />
             </div>
           )}
@@ -229,7 +230,8 @@ export const ImageScanGrid = ({
           </div>
           <button
             onClick={() => setDownloadError(null)}
-            className="text-[#8E929E] hover:text-white cursor-pointer"
+            type="button"
+            className="min-h-11 min-w-11 flex items-center justify-center text-[#8E929E] hover:text-white cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -237,7 +239,7 @@ export const ImageScanGrid = ({
       )}
 
       {/* Grid Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5 max-h-[30rem] overflow-y-auto pr-1">
+      <div className="min-w-0 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5 max-h-[30rem] overflow-y-auto pr-1">
         {filteredResults.length === 0 ? (
           <div className="col-span-full py-8 text-center text-xs text-[#737887] bg-[#16171B] rounded-md border border-[#26272E]">
             {unmatchedResults.length === 0
@@ -298,7 +300,15 @@ export const ImageScanGrid = ({
               <div
                 key={index}
                 onClick={onCardClick}
-                className={`p-4 rounded-md border shadow-sm flex flex-col justify-between transition cursor-pointer group ${
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onCardClick();
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                className={`min-w-0 min-h-11 p-4 rounded-md border shadow-sm flex flex-col justify-between transition cursor-pointer group focus-visible:outline-2 focus-visible:outline-[#A0E3E2] ${
                   isFailed
                     ? 'bg-[#291B17]/40 border-[#5C2B1D] hover:border-[#F59E0B]/80 hover:bg-[#331F19]/50'
                     : 'bg-[#23171A]/40 border-[#5C1D24] hover:border-[#FB7185]/80 hover:bg-[#2F191E]/50'
@@ -326,7 +336,7 @@ export const ImageScanGrid = ({
                   </div>
 
                   {/* Barcode Number Display */}
-                  <div className="space-y-1.5 mb-1">
+                  <div className="min-w-0 space-y-1.5 mb-1">
                     {barcodeDisplay ? (
                       <div
                         className="font-mono text-base font-bold text-white tracking-wide truncate"
@@ -353,7 +363,7 @@ export const ImageScanGrid = ({
                       e.stopPropagation();
                       onCardClick();
                     }}
-                    className="inline-flex items-center gap-1 text-[10px] text-[#A0A5B5] group-hover:text-[#A0E3E2] hover:text-[#A0E3E2] transition cursor-pointer"
+                    className="inline-flex min-h-11 items-center gap-1 text-[10px] text-[#A0A5B5] group-hover:text-[#A0E3E2] hover:text-[#A0E3E2] transition cursor-pointer"
                     title={t('unmatched.preview')}
                   >
                     <Eye className="w-3 h-3" />
@@ -371,16 +381,16 @@ export const ImageScanGrid = ({
         selectedPreviewImage &&
         createPortal(
           <div
-            className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-[9999] overflow-y-auto bg-black/85 p-2 backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:p-4"
             onClick={() => setSelectedPreviewImage(null)}
           >
             <div
-              className="bg-[#1C1D22] border border-[#3D404B] rounded-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+              className="mx-auto flex min-h-[calc(100dvh-1rem)] w-full max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-[#3D404B] bg-[#1C1D22] shadow-2xl sm:min-h-0 sm:max-h-[90vh] sm:max-w-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#26272E] bg-[#16171B]">
-                <div className="flex items-center gap-2 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#26272E] bg-[#16171B] px-4 py-3.5 sm:px-5">
+                <div className="flex min-w-0 items-center gap-2 overflow-hidden">
                   <Eye className="w-4 h-4 text-[#A0E3E2] shrink-0" />
                   <div className="truncate">
                     <h4 className="text-sm font-semibold text-white m-0">
@@ -395,7 +405,7 @@ export const ImageScanGrid = ({
                 <button
                   type="button"
                   onClick={() => setSelectedPreviewImage(null)}
-                  className="p-1.5 rounded-md text-[#8E929E] hover:text-white hover:bg-[#2B2D35] transition cursor-pointer ml-3 shrink-0"
+                  className="ml-3 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-[#8E929E] hover:bg-[#2B2D35] hover:text-white transition cursor-pointer"
                   title={t('unmatched.close')}
                   aria-label={t('unmatched.close')}
                 >
@@ -404,7 +414,7 @@ export const ImageScanGrid = ({
               </div>
 
               {/* Modal Image View */}
-              <div className="p-4 overflow-y-auto flex-1 flex items-center justify-center bg-[#121316] min-h-[260px]">
+              <div className="min-h-0 max-h-[calc(100dvh-9rem)] flex-1 overflow-y-auto bg-[#121316] p-4 flex items-center justify-center sm:max-h-[60vh]">
                 {selectedPreviewImage.url ? (
                   <img
                     src={selectedPreviewImage.url}
@@ -444,11 +454,11 @@ export const ImageScanGrid = ({
               </div>
 
               {/* Modal Footer with Barcode Badge */}
-              <div className="px-5 py-3 border-t border-[#26272E] bg-[#16171B] flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#26272E] bg-[#16171B] px-4 py-3 sm:px-5">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span className="text-xs text-[#8E929E]">បាកូដ:</span>
                   {selectedPreviewImage.barcode ? (
-                    <span className="font-mono text-sm font-bold text-[#FB7185] bg-[#461B21] px-2.5 py-0.5 rounded border border-[#5C1D24]">
+                    <span className="max-w-full break-all rounded border border-[#5C1D24] bg-[#461B21] px-2.5 py-0.5 font-mono text-sm font-bold text-[#FB7185]">
                       {selectedPreviewImage.barcode}
                     </span>
                   ) : (
@@ -461,7 +471,7 @@ export const ImageScanGrid = ({
                 <button
                   type="button"
                   onClick={() => setSelectedPreviewImage(null)}
-                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#24262E] text-[#D1D5DB] hover:bg-[#2D2F38] hover:text-white transition cursor-pointer"
+                  className="min-h-11 shrink-0 rounded-md bg-[#24262E] px-3 py-1.5 text-xs font-medium text-[#D1D5DB] hover:bg-[#2D2F38] hover:text-white transition cursor-pointer"
                 >
                   {t('unmatched.close')}
                 </button>

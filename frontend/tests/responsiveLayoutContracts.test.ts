@@ -57,3 +57,21 @@ test('spreadsheet controls wrap and table overflow stays inside its panel', () =
   assert.match(source, /min-w-0 overflow-x-auto/);
   assert.match(source, /min-w-\[640px\]/);
 });
+
+test('unmatched results use a phone list and stretch controls', () => {
+  const source = readSource('../src/features/reconciliation/components/ImageScanGrid.tsx');
+
+  assert.match(source, /grid-cols-1 sm:grid-cols-2/);
+  assert.match(source, /flex-col sm:flex-row/);
+  assert.match(source, /min-h-11/);
+  assert.match(source, /focus-visible:outline/);
+});
+
+test('image preview fits a phone viewport and wraps its footer', () => {
+  const source = readSource('../src/features/reconciliation/components/ImageScanGrid.tsx');
+
+  assert.match(source, /max-w-\[calc\(100vw-2rem\)\]/);
+  assert.match(source, /max-h-\[calc\(100dvh-9rem\)\]/);
+  assert.match(source, /flex-wrap/);
+  assert.match(source, /sm:max-h-\[90vh\]/);
+});
