@@ -22,3 +22,8 @@ export function reconciliationUnmatchedImageDownloadPath(
 ): string {
   return `${reconciliationUnmatchedDownloadPath(reconciliationId)}/${encodeURIComponent(String(imageIndex))}`;
 }
+
+export function reconciliationUnmatchedZipDownloadPath(reconciliationId: string): string {
+  return `${reconciliationStatusPath(reconciliationId)}/download-unmatched-zip`;
+}
+

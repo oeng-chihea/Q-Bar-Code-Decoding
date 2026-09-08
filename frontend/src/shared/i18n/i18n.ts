@@ -91,6 +91,10 @@ const khmer = {
   'unmatched.downloadingAll': 'កំពុងទាញយករូបភាពដើម...',
   'unmatched.downloadRaw': 'ទាញយករូបភាពដើម',
   'unmatched.downloadError': 'ការទាញយកបានបរាជ័យ',
+  'unmatched.saveImage': 'រក្សាទុករូបភាព',
+  'unmatched.saveToGallery': 'រក្សាទុកក្នុង Gallery',
+  'unmatched.iosHint': 'នៅលើ iPhone៖ ចុចរក្សាទុករូបភាព ឬសង្កត់លើរូបភាពដើម្បីរក្សាទុកក្នុង Gallery',
+  'unmatched.downloadZip': 'ទាញយកជាឯកសារ ZIP',
   'unmatched.close': 'បិទ',
 } as const;
 

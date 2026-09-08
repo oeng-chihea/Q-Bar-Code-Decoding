@@ -164,6 +164,11 @@ class BarcodeReconciliationControllerContractTest {
         mockMvc.perform(get("/api/v1/barcode-reconciliations/{id}/download-unmatched/{imageIndex}", reconciliationId, 0))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("Unmatched image not found"));
+
+        mockMvc.perform(get("/api/v1/barcode-reconciliations/{id}/download-unmatched-zip", reconciliationId))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/zip"))
+                .andExpect(header().string("Content-Disposition", containsString("unmatched_images_" + reconciliationId + ".zip")));
     }
 
     @Test

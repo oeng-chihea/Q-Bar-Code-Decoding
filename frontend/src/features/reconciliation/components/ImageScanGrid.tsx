@@ -16,6 +16,7 @@ import {
   downloadUnmatchedImage,
   downloadUnmatchedImages,
 } from '@/features/reconciliation/api/reconciliationApi';
+import { saveOrShareImage } from '@/features/reconciliation/utils/imageSaveUtils';
 import { useTranslation } from '@/shared/i18n/i18n';
 
 interface ImageScanGridProps {
@@ -36,11 +37,15 @@ export const ImageScanGrid = ({
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadingImageIndex, setDownloadingImageIndex] = useState<number | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [isPreviewSaving, setIsPreviewSaving] = useState(false);
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<{
     url?: string;
     filename: string;
     barcode?: string;
     isFailed: boolean;
+    item?: BarcodeResult;
+    imageIndex?: number;
+    file?: File;
   } | null>(null);
 
   // Close preview modal on Escape key
@@ -156,7 +161,21 @@ export const ImageScanGrid = ({
     setIsDownloading(true);
     setDownloadError(null);
     try {
-      await downloadUnmatchedImages(reconciliationId);
+      const localUnmatchedFiles: File[] = [];
+      if (imageFiles && imageFiles.length > 0) {
+        for (let i = 0; i < unmatchedResults.length; i++) {
+          const file = getFileForItem(unmatchedResults[i], i);
+          if (file) {
+            localUnmatchedFiles.push(file);
+          }
+        }
+      }
+
+      const hasAllLocalFiles = localUnmatchedFiles.length === unmatchedResults.length;
+      await downloadUnmatchedImages(reconciliationId, {
+        localFiles: hasAllLocalFiles ? localUnmatchedFiles : undefined,
+        preferZip: true,
+      });
     } catch (error: unknown) {
       setDownloadError(error instanceof Error ? error.message : t('unmatched.downloadError'));
     } finally {
@@ -164,7 +183,11 @@ export const ImageScanGrid = ({
     }
   };
 
-  const handleDownloadImage = async (item: BarcodeResult, imageIndex: number) => {
+  const handleDownloadImage = async (
+    item: BarcodeResult,
+    imageIndex: number,
+    localFile?: File,
+  ) => {
     if (
       !reconciliationId ||
       isDownloading ||
@@ -174,11 +197,41 @@ export const ImageScanGrid = ({
     setDownloadingImageIndex(imageIndex);
     setDownloadError(null);
     try {
-      await downloadUnmatchedImage(reconciliationId, imageIndex, item.filename);
+      const resolvedFile = localFile || getFileForItem(item, imageIndex);
+      await downloadUnmatchedImage(reconciliationId, imageIndex, item.filename, resolvedFile);
     } catch (error: unknown) {
       setDownloadError(error instanceof Error ? error.message : t('unmatched.downloadError'));
     } finally {
       setDownloadingImageIndex(null);
+    }
+  };
+
+  const handleSavePreviewImage = async () => {
+    if (!selectedPreviewImage || isPreviewSaving) return;
+    setIsPreviewSaving(true);
+    setDownloadError(null);
+    try {
+      if (selectedPreviewImage.file) {
+        await saveOrShareImage(selectedPreviewImage.file, selectedPreviewImage.filename);
+      } else if (
+        reconciliationId &&
+        selectedPreviewImage.item &&
+        selectedPreviewImage.imageIndex !== undefined
+      ) {
+        await downloadUnmatchedImage(
+          reconciliationId,
+          selectedPreviewImage.imageIndex,
+          selectedPreviewImage.filename,
+        );
+      } else if (selectedPreviewImage.url) {
+        const res = await fetch(selectedPreviewImage.url);
+        const blob = await res.blob();
+        await saveOrShareImage(blob, selectedPreviewImage.filename);
+      }
+    } catch (error: unknown) {
+      setDownloadError(error instanceof Error ? error.message : t('unmatched.downloadError'));
+    } finally {
+      setIsPreviewSaving(false);
     }
   };
 
@@ -283,6 +336,9 @@ export const ImageScanGrid = ({
                       filename: item.filename,
                       barcode: barcodeDisplay,
                       isFailed,
+                      item,
+                      imageIndex,
+                      file,
                     });
                   }
                 };
@@ -293,6 +349,9 @@ export const ImageScanGrid = ({
                     filename: item.filename,
                     barcode: barcodeDisplay,
                     isFailed,
+                    item,
+                    imageIndex,
+                    file,
                   });
                 };
                 reader.readAsDataURL(file);
@@ -304,6 +363,9 @@ export const ImageScanGrid = ({
                   filename: item.filename,
                   barcode: barcodeDisplay,
                   isFailed,
+                  item,
+                  imageIndex,
+                  file,
                 });
               } else {
                 setSelectedPreviewImage({
@@ -311,6 +373,8 @@ export const ImageScanGrid = ({
                   filename: item.filename,
                   barcode: barcodeDisplay,
                   isFailed,
+                  item,
+                  imageIndex,
                 });
               }
             };
@@ -381,7 +445,8 @@ export const ImageScanGrid = ({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        void handleDownloadImage(item, imageIndex);
+                        const localFile = getFileForItem(item, index);
+                        void handleDownloadImage(item, imageIndex, localFile);
                       }}
                       disabled={!reconciliationId || isDownloading || downloadingImageIndex !== null}
                       className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-[#A0A5B5] hover:bg-[#2B2D35] hover:text-[#A0E3E2] transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
@@ -507,13 +572,35 @@ export const ImageScanGrid = ({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedPreviewImage(null)}
-                  className="min-h-11 shrink-0 rounded-md bg-[#24262E] px-3 py-1.5 text-xs font-medium text-[#D1D5DB] hover:bg-[#2D2F38] hover:text-white transition cursor-pointer"
-                >
-                  {t('unmatched.close')}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleSavePreviewImage()}
+                    disabled={isPreviewSaving}
+                    className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md bg-[#461B21] border border-[#FB7185]/40 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#5C2028] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={t('unmatched.saveToGallery')}
+                  >
+                    {isPreviewSaving ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FB7185]" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5 text-[#FB7185]" />
+                    )}
+                    <span>{t('unmatched.saveImage')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPreviewImage(null)}
+                    className="min-h-11 shrink-0 rounded-md bg-[#24262E] px-3 py-1.5 text-xs font-medium text-[#D1D5DB] hover:bg-[#2D2F38] hover:text-white transition cursor-pointer"
+                  >
+                    {t('unmatched.close')}
+                  </button>
+                </div>
+
+                {/* Mobile guidance for iOS / iPhone users */}
+                <p className="w-full m-0 text-[11px] text-[#8E929E] italic text-center sm:hidden">
+                  {t('unmatched.iosHint')}
+                </p>
               </div>
             </div>
           </div>,

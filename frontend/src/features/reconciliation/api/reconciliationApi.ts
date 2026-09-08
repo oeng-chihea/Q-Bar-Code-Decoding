@@ -11,7 +11,14 @@ import {
   reconciliationStatusPath,
   reconciliationUnmatchedImageDownloadPath,
   reconciliationUnmatchedDownloadPath,
+  reconciliationUnmatchedZipDownloadPath,
 } from './reconciliationApiPaths.ts';
+import {
+  canShareImages,
+  saveOrShareImage,
+  saveOrShareBatch,
+  triggerBrowserDownload,
+} from '../utils/imageSaveUtils.ts';
 
 export const API_BASE_URL = import.meta.env?.VITE_API_URL || '';
 
@@ -134,7 +141,15 @@ export async function downloadUnmatchedImage(
   reconciliationId: string,
   imageIndex: number,
   filename?: string,
+  localFile?: File,
 ): Promise<void> {
+  if (localFile && canShareImages([localFile])) {
+    const result = await saveOrShareImage(localFile, filename || localFile.name, imageIndex + 1);
+    if (result.shared || result.canceled) {
+      return;
+    }
+  }
+
   const response = await fetch(
     `${API_BASE_URL}${reconciliationUnmatchedImageDownloadPath(reconciliationId, imageIndex)}`,
   );
@@ -142,13 +157,58 @@ export async function downloadUnmatchedImage(
     throw new Error(await getErrorMessage(response, `Download failed (${response.status})`));
   }
 
-  const fallbackFilename = `unmatched-image-${imageIndex + 1}.bin`;
-  await triggerBrowserDownload(await response.blob(), filename || fallbackFilename);
+  const fallbackFilename = `unmatched-image-${imageIndex + 1}.jpg`;
+  const blob = await response.blob();
+  await saveOrShareImage(blob, filename || fallbackFilename, imageIndex + 1);
+}
+
+export async function downloadUnmatchedZip(
+  reconciliationId: string,
+  filename?: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}${reconciliationUnmatchedZipDownloadPath(reconciliationId)}`,
+  );
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response, `Download failed (${response.status})`));
+  }
+  const zipBlob = await response.blob();
+  const zipFilename = filename || `unmatched_images_${reconciliationId}.zip`;
+  triggerBrowserDownload(zipBlob, zipFilename);
 }
 
 export async function downloadUnmatchedImages(
   reconciliationId: string,
+  options?: {
+    localFiles?: File[];
+    preferZip?: boolean;
+  } | File[],
 ): Promise<void> {
+  const resolvedOptions = Array.isArray(options) ? { localFiles: options } : options;
+  const localFiles = resolvedOptions?.localFiles;
+
+  if (localFiles && localFiles.length > 0 && canShareImages(localFiles)) {
+    const result = await saveOrShareBatch(localFiles, async () => {
+      if (resolvedOptions?.preferZip) {
+        await downloadUnmatchedZip(reconciliationId);
+      } else {
+        await downloadManifestSequentially(reconciliationId);
+      }
+    });
+    if (result.shared || result.canceled) {
+      return;
+    }
+  }
+
+  if (resolvedOptions?.preferZip) {
+    await downloadUnmatchedZip(reconciliationId);
+    return;
+  }
+
+  await downloadManifestSequentially(reconciliationId);
+}
+
+async function downloadManifestSequentially(reconciliationId: string): Promise<void> {
   const manifest = await fetchUnmatchedImages(reconciliationId);
   if (!Array.isArray(manifest.images) || manifest.images.length === 0) {
     throw new Error('No unmatched images found');
@@ -163,21 +223,6 @@ export async function downloadUnmatchedImages(
       await delay(150);
     }
   }
-}
-
-async function triggerBrowserDownload(blob: Blob, filename: string): Promise<void> {
-  const browserUrl = window.URL;
-  const url = browserUrl.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.rel = 'noopener';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  // Delaying revocation avoids cancelling downloads on slower mobile browsers.
-  globalThis.setTimeout(() => browserUrl.revokeObjectURL(url), 1000);
 }
 
 async function getJson<T>(path: string): Promise<T> {
