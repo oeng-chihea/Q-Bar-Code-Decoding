@@ -32,4 +32,7 @@ test('provides unmatched barcodes translation keys in Khmer', () => {
   assert.equal(translate('unmatched.none'), 'បាកូដទាំងអស់ត្រូវបានផ្គូផ្គងជោគជ័យ (គ្មានបាកូដដែលនៅសល់)');
   assert.equal(translate('unmatched.preview'), 'ចុចដើម្បីមើលរូបភាព');
   assert.equal(translate('unmatched.previewTitle'), 'មើលរូបភាពបាកូដ');
+  assert.equal(translate('unmatched.download'), 'ទាញយករូបភាពមិនត្រូវគ្នា');
+  assert.equal(translate('unmatched.downloading'), 'កំពុងទាញយក...');
+  assert.equal(translate('unmatched.downloadError'), 'ការទាញយកបានបរាជ័យ');
 });

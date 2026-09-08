@@ -33,8 +33,12 @@ public class BarcodeReconciliationListener {
 
             Path excelPath = fileStorage.resolveStoredPath(request.getExcelFilePath());
             MultipartFile excelFile = fileStorage.asMultipartFile(excelPath, "excelFile");
-            List<MultipartFile> imageFiles = request.getImageFilePaths().stream()
-                    .map(path -> toMultipartFile(path, "images"))
+            List<Path> imagePaths = request.getImageFilePaths().stream()
+                    .map(fileStorage::resolveStoredPath)
+                    .toList();
+            registry.setImagePaths(reconciliationId, imagePaths);
+            List<MultipartFile> imageFiles = imagePaths.stream()
+                    .map(path -> toMultipartFile(path.toString(), "images"))
                     .toList();
 
             registry.markStage(reconciliationId, "Running reconciliation pipeline");

@@ -11,14 +11,19 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.IntStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Service
 public class LocalReconciliationFileStorageService {
     private static final String RESULT_FILE_NAME = "result.xlsx";
+    private static final String UNMATCHED_ZIP_FILE_NAME = "unmatched_images.zip";
 
     private final Path storageRoot;
 
@@ -56,6 +61,17 @@ public class LocalReconciliationFileStorageService {
                 .toList();
     }
 
+    public List<Path> getStoredImageFiles(String reconciliationId) throws IOException {
+        validateReconciliationId(reconciliationId);
+        Path imageDirectory = directoryFor(reconciliationId).resolve("images");
+        if (!Files.isDirectory(imageDirectory)) {
+            return List.of();
+        }
+        try (var stream = Files.list(imageDirectory)) {
+            return stream.filter(Files::isRegularFile).sorted().toList();
+        }
+    }
+
     public Path saveResult(String reconciliationId, ReconciliationResponse response) throws IOException {
         Objects.requireNonNull(response, "Reconciliation response is required");
         String encodedWorkbook = response.getHighlightedExcelBase64();
@@ -74,6 +90,68 @@ public class LocalReconciliationFileStorageService {
         Files.createDirectories(resultPath.getParent());
         Files.write(resultPath, workbookBytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         return resultPath;
+    }
+
+    public Path createUnmatchedImagesZip(String reconciliationId,
+                                         List<Path> unmatchedImagePaths,
+                                         List<String> originalFilenames) throws IOException {
+        validateReconciliationId(reconciliationId);
+        Objects.requireNonNull(unmatchedImagePaths, "Unmatched image paths are required");
+
+        Path zipPath = directoryFor(reconciliationId).resolve(UNMATCHED_ZIP_FILE_NAME);
+        Files.createDirectories(zipPath.getParent());
+
+        Set<String> usedEntryNames = new HashSet<>();
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipPath,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
+            for (int i = 0; i < unmatchedImagePaths.size(); i++) {
+                Path imagePath = unmatchedImagePaths.get(i);
+                if (imagePath == null || !Files.isRegularFile(imagePath)) {
+                    continue;
+                }
+
+                String filename = (originalFilenames != null && i < originalFilenames.size() && originalFilenames.get(i) != null && !originalFilenames.get(i).isBlank())
+                        ? originalFilenames.get(i)
+                        : imagePath.getFileName().toString();
+
+                String entryName = deduplicateZipEntryName(filename, usedEntryNames);
+                usedEntryNames.add(entryName);
+
+                ZipEntry zipEntry = new ZipEntry(entryName);
+                zos.putNextEntry(zipEntry);
+                Files.copy(imagePath, zos);
+                zos.closeEntry();
+            }
+        }
+
+        return zipPath;
+    }
+
+    private String deduplicateZipEntryName(String originalName, Set<String> usedNames) {
+        String baseName = originalName == null || originalName.isBlank()
+                ? "image.bin"
+                : Path.of(originalName).getFileName().toString();
+        baseName = baseName.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (baseName.isBlank() || baseName.equals(".") || baseName.equals("..")) {
+            baseName = "image.bin";
+        }
+
+        if (!usedNames.contains(baseName)) {
+            return baseName;
+        }
+
+        int dotIndex = baseName.lastIndexOf('.');
+        String prefix = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
+        String extension = dotIndex > 0 ? baseName.substring(dotIndex) : "";
+
+        int count = 1;
+        while (true) {
+            String candidate = prefix + " (" + count + ")" + extension;
+            if (!usedNames.contains(candidate)) {
+                return candidate;
+            }
+            count++;
+        }
     }
 
     public Path resolveStoredPath(String pathValue) {

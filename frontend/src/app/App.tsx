@@ -143,6 +143,8 @@ export function App() {
               scanResults={results.scanResults}
               matchedCodes={results.matchedCodes}
               imageFiles={imageFiles}
+              reconciliationId={reconciliationId || ''}
+              downloadFileName={results.downloadFileName}
             />
           </div>
         )}

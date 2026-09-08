@@ -8,23 +8,32 @@ import {
   X,
   ScanLine,
   ImageOff,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import type { BarcodeResult } from '@/features/reconciliation/model/types';
+import { downloadUnmatchedImages } from '@/features/reconciliation/api/reconciliationApi';
 import { useTranslation } from '@/shared/i18n/i18n';
 
 interface ImageScanGridProps {
   scanResults: BarcodeResult[];
   matchedCodes: string[];
   imageFiles?: File[];
+  reconciliationId?: string;
+  downloadFileName?: string;
 }
 
 export const ImageScanGrid = ({
   scanResults,
   matchedCodes,
   imageFiles,
+  reconciliationId,
+  downloadFileName,
 }: ImageScanGridProps) => {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<{
     url?: string;
     filename: string;
@@ -140,6 +149,23 @@ export const ImageScanGrid = ({
     return true;
   });
 
+  const handleDownloadUnmatched = async () => {
+    if (!reconciliationId || isDownloading || unmatchedResults.length === 0) return;
+    setIsDownloading(true);
+    setDownloadError(null);
+    try {
+      const baseName = downloadFileName
+        ? downloadFileName.replace(/(?:_highlighted)?\.(?:xlsx|xls|csv|png|jpg|jpeg|webp)$/i, '')
+        : 'reconciliation';
+      const zipFileName = `${baseName}_unmatched_images.zip`;
+      await downloadUnmatchedImages(reconciliationId, zipFileName);
+    } catch (error: unknown) {
+      setDownloadError(error instanceof Error ? error.message : t('unmatched.downloadError'));
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <div className="bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-5 text-left space-y-4">
       {/* Header Controls */}
@@ -156,20 +182,59 @@ export const ImageScanGrid = ({
           </div>
         </div>
 
-        {/* Search */}
-        {unmatchedResults.length > 0 && (
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-[#737887] absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('unmatched.search')}
-              className="pl-8 pr-3 py-1.5 rounded-md bg-[#16171B] border border-[#2B2D35] text-xs text-[#F3F4F6] placeholder-[#737887] focus:outline-none focus:border-[#FB7185] w-full sm:w-56"
-            />
-          </div>
-        )}
+        {/* Right Action Controls */}
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* Download Unmatched Images */}
+          {unmatchedResults.length > 0 && (
+            <button
+              onClick={() => void handleDownloadUnmatched()}
+              disabled={isDownloading || !reconciliationId}
+              className="px-3.5 py-1.5 rounded-md border border-[#FB7185]/40 text-xs font-semibold text-white bg-[#461B21] hover:bg-[#5C2028] transition shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {isDownloading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FB7185]" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-[#FB7185]" />
+              )}
+              <span>
+                {isDownloading ? t('unmatched.downloading') : t('unmatched.download')}
+              </span>
+              <span className="px-1.5 py-0.5 rounded-full bg-[#FB7185]/20 text-[#FB7185] text-[10px] font-bold">
+                {unmatchedResults.length}
+              </span>
+            </button>
+          )}
+
+          {/* Search */}
+          {unmatchedResults.length > 0 && (
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-[#737887] absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('unmatched.search')}
+                className="pl-8 pr-3 py-1.5 rounded-md bg-[#16171B] border border-[#2B2D35] text-xs text-[#F3F4F6] placeholder-[#737887] focus:outline-none focus:border-[#FB7185] w-full sm:w-56"
+              />
+            </div>
+          )}
+        </div>
       </div>
+
+      {downloadError && (
+        <div className="bg-[#461B21]/60 border border-[#FB7185]/40 rounded-md p-2.5 flex items-center justify-between gap-2 text-[#FCA5A5] text-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-[#FB7185] shrink-0" />
+            <span>{downloadError}</span>
+          </div>
+          <button
+            onClick={() => setDownloadError(null)}
+            className="text-[#8E929E] hover:text-white cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Grid Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5 max-h-[30rem] overflow-y-auto pr-1">

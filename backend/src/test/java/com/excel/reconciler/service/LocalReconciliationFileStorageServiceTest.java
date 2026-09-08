@@ -49,4 +49,36 @@ class LocalReconciliationFileStorageServiceTest {
 
         assertThrows(IllegalArgumentException.class, () -> storage.directoryFor("../outside"));
     }
+
+    @Test
+    void createsUnmatchedImagesZipAndHandlesDuplicateFilenames() throws Exception {
+        LocalReconciliationFileStorageService storage =
+                new LocalReconciliationFileStorageService(temporaryDirectory.toString());
+
+        Path image1 = temporaryDirectory.resolve("img1.png");
+        Path image2 = temporaryDirectory.resolve("img2.png");
+        Files.write(image1, new byte[]{10, 20});
+        Files.write(image2, new byte[]{30, 40});
+
+        Path zipPath = storage.createUnmatchedImagesZip(
+                "rec-2",
+                List.of(image1, image2),
+                List.of("barcode.png", "barcode.png")
+        );
+
+        org.junit.jupiter.api.Assertions.assertTrue(Files.isRegularFile(zipPath));
+
+        java.util.List<String> entryNames = new java.util.ArrayList<>();
+        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(Files.newInputStream(zipPath))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                entryNames.add(entry.getName());
+                zis.closeEntry();
+            }
+        }
+
+        assertEquals(2, entryNames.size());
+        assertEquals("barcode.png", entryNames.get(0));
+        assertEquals("barcode (1).png", entryNames.get(1));
+    }
 }

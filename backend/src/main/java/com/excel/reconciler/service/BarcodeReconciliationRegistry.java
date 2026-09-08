@@ -5,6 +5,7 @@ import com.excel.reconciler.model.ReconciliationStatus;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -59,6 +60,10 @@ public class BarcodeReconciliationRegistry {
         record.errorMessage = errorMessage;
     }
 
+    public void setImagePaths(String reconciliationId, List<Path> imagePaths) {
+        require(reconciliationId).imagePaths = imagePaths != null ? List.copyOf(imagePaths) : List.of();
+    }
+
     public static final class Record {
         private final String reconciliationId;
         private volatile ReconciliationStatus status;
@@ -67,6 +72,7 @@ public class BarcodeReconciliationRegistry {
         private volatile ReconciliationResponse result;
         private volatile Path resultPath;
         private volatile String downloadFileName;
+        private volatile List<Path> imagePaths = List.of();
 
         private Record(String reconciliationId) {
             this.reconciliationId = reconciliationId;
@@ -100,6 +106,10 @@ public class BarcodeReconciliationRegistry {
 
         public String downloadFileName() {
             return downloadFileName;
+        }
+
+        public List<Path> imagePaths() {
+            return imagePaths != null ? imagePaths : List.of();
         }
     }
 }

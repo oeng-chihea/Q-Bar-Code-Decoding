@@ -8,6 +8,7 @@ import {
   reconciliationDownloadPath,
   reconciliationResultPath,
   reconciliationStatusPath,
+  reconciliationUnmatchedDownloadPath,
 } from './reconciliationApiPaths.ts';
 
 export const API_BASE_URL = import.meta.env?.VITE_API_URL || '';
@@ -123,6 +124,28 @@ export async function downloadReconciliation(
   const link = document.createElement('a');
   link.href = url;
   link.download = filename || 'reconciliation_highlighted.xlsx';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
+export async function downloadUnmatchedImages(
+  reconciliationId: string,
+  filename?: string
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}${reconciliationUnmatchedDownloadPath(reconciliationId)}`
+  );
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response, `Download failed (${response.status})`));
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || 'unmatched_images.zip';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

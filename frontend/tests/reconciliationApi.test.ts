@@ -4,6 +4,7 @@ import {
   reconciliationDownloadPath,
   reconciliationResultPath,
   reconciliationStatusPath,
+  reconciliationUnmatchedDownloadPath,
 } from '../src/features/reconciliation/api/reconciliationApiPaths.ts';
 import { waitForReconciliation } from '../src/features/reconciliation/api/reconciliationApi.ts';
 
@@ -21,6 +22,10 @@ test('builds encoded reconciliation endpoint paths', () => {
   assert.equal(
     reconciliationDownloadPath(reconciliationId),
     '/api/v1/barcode-reconciliations/reconciliation%2Fwith%20spaces/download',
+  );
+  assert.equal(
+    reconciliationUnmatchedDownloadPath(reconciliationId),
+    '/api/v1/barcode-reconciliations/reconciliation%2Fwith%20spaces/download-unmatched',
   );
 });
 

@@ -11,3 +11,7 @@ export function reconciliationResultPath(reconciliationId: string): string {
 export function reconciliationDownloadPath(reconciliationId: string): string {
   return `${reconciliationStatusPath(reconciliationId)}/download`;
 }
+
+export function reconciliationUnmatchedDownloadPath(reconciliationId: string): string {
+  return `${reconciliationStatusPath(reconciliationId)}/download-unmatched`;
+}

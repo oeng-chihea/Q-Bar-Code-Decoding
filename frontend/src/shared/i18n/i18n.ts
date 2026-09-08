@@ -85,6 +85,9 @@ const khmer = {
   'unmatched.image': 'រូបភាព #{{number}}',
   'unmatched.unmatchedTag': 'មិនត្រូវគ្នា',
   'unmatched.noBarcodeTag': 'រកមិនឃើញបាកូដ',
+  'unmatched.download': 'ទាញយករូបភាពមិនត្រូវគ្នា',
+  'unmatched.downloading': 'កំពុងទាញយក...',
+  'unmatched.downloadError': 'ការទាញយកបានបរាជ័យ',
   'unmatched.close': 'បិទ',
 } as const;
 

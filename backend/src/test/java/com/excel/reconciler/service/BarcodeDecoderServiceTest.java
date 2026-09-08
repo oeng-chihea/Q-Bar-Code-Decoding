@@ -10,6 +10,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.Collections;
 import java.util.List;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -104,7 +106,8 @@ class BarcodeDecoderServiceTest {
 
         service.decodeBatch(images);
 
-        var captor = org.mockito.ArgumentCaptor.forClass(List.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<GeminiVisionService.BarcodeImage>> captor = ArgumentCaptor.forClass(List.class);
         verify(gemini, times(2)).extractBarcodesParallel(captor.capture());
         assertEquals(List.of(4, 1), captor.getAllValues().stream().map(List::size).toList());
     }
