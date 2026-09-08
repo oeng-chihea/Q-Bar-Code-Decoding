@@ -78,7 +78,8 @@ export function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full p-6 space-y-8">
+      <main className="flex-1 w-full overflow-x-hidden px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 sm:py-6">
+        <div className="mx-auto w-full max-w-7xl space-y-8">
         {/* Error Banner */}
         {error && (
           <div className="bg-[#461B21]/60 border border-[#FB7185]/40 rounded-md p-3.5 flex items-center justify-between gap-3 text-[#FCA5A5] text-sm animate-in fade-in">
@@ -148,6 +149,7 @@ export function App() {
             />
           </div>
         )}
+        </div>
       </main>
     </div>
   );
