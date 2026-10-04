@@ -29,6 +29,19 @@ export interface ExcelRowPreview {
   matched: boolean;
 }
 
+export type WaybillStatus = 'NEW' | 'ON_TRACK' | 'DUE_TODAY' | 'OVERDUE';
+
+export interface UnmatchedWaybill {
+  waybillNo: string;
+  startDate: string;
+  dueDate: string;
+  daysOpen: number;
+  daysLeft: number;
+  overdueDays: number;
+  status: WaybillStatus;
+  inThisUpload: boolean;
+}
+
 export interface ReconciliationResponse {
   totalImages: number;
   decodedImagesCount: number;
@@ -49,6 +62,11 @@ export interface ReconciliationResponse {
   downloadFileName: string;
   excelSourceType?: 'EXCEL_TABLE_IMAGE';
   executionTimeMs: number;
+  // Waybill tracking is optional: older backends and backends without a database omit it
+  trackingAvailable?: boolean;
+  overdueAfterDays?: number;
+  overdueCount?: number;
+  unmatchedWaybills?: UnmatchedWaybill[];
 }
 
 export interface ReconciliationConfig {

@@ -4,7 +4,6 @@ import {
   Download,
   Filter,
   CheckCircle2,
-  Layers,
 } from 'lucide-react';
 import type { ExcelRowPreview } from '@/features/reconciliation/model/types';
 import { downloadReconciliation } from '@/features/reconciliation/api/reconciliationApi';
@@ -14,8 +13,6 @@ interface ExcelPreviewTableProps {
   columns: string[];
   previewRows: ExcelRowPreview[];
   matchedColumnName: string;
-  matchedColumnConfidence?: number;
-  activeSheetName?: string;
   totalRows: number;
   matchedCount: number;
   reconciliationId: string;
@@ -26,8 +23,6 @@ export const ExcelPreviewTable = ({
   columns,
   previewRows,
   matchedColumnName,
-  matchedColumnConfidence,
-  activeSheetName,
   totalRows,
   matchedCount,
   reconciliationId,
@@ -64,20 +59,6 @@ export const ExcelPreviewTable = ({
           <div className="min-w-0">
             <h3 className="break-words text-sm font-bold text-white uppercase tracking-wider m-0 flex items-center gap-2 flex-wrap">
               <span>{t('preview.title')}</span>
-              {activeSheetName && (
-                <span className="text-xs px-2 py-0.5 rounded bg-[#1A2333] text-[#818CF8] border border-[#27354E] font-medium flex items-center gap-1">
-                  <Layers className="w-3 h-3" />
-                  {t('preview.sheet', { name: activeSheetName })}
-                </span>
-              )}
-              <span className="text-xs px-2 py-0.5 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36] font-normal">
-                {t('preview.target', { name: matchedColumnName })}
-              </span>
-              {matchedColumnConfidence !== undefined && matchedColumnConfidence > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded bg-[#1A2333] text-[#A0E3E2] border border-[#27354E] font-normal">
-                  {t('preview.confidence', { rate: Math.round(matchedColumnConfidence * 100) })}
-                </span>
-              )}
             </h3>
             <p className="break-words text-xs text-[#8E929E] m-0 mt-0.5">
               {t('preview.showing', { count: previewRows.length, matched: matchedCount })}

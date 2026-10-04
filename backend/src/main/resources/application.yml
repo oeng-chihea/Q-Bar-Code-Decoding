@@ -37,6 +37,10 @@ app:
     storage-root: ${RECONCILIATION_STORAGE_ROOT:runtime/reconciliations}
     # Stored uploads/results of finished jobs older than this are deleted hourly (0 disables cleanup)
     retention-hours: ${RECONCILIATION_RETENTION_HOURS:24}
+  waybill:
+    # An unmatched waybill becomes overdue once it has been unmatched for more than this many days
+    overdue-days: ${WAYBILL_OVERDUE_DAYS:6}
+    zone: ${WAYBILL_ZONE:Asia/Phnom_Penh}
   database:
     url: ${MYSQL_URL:}
     username: ${MYSQL_USERNAME:}

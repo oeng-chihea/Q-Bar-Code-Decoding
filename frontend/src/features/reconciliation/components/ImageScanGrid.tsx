@@ -11,7 +11,9 @@ import {
   Download,
   Loader2,
 } from 'lucide-react';
-import type { BarcodeResult } from '@/features/reconciliation/model/types';
+import type { BarcodeResult, UnmatchedWaybill } from '@/features/reconciliation/model/types';
+import { WaybillStatusBadge } from '@/features/reconciliation/components/WaybillStatusBadge';
+import { findWaybill } from '@/features/reconciliation/utils/waybillTracking';
 import {
   downloadUnmatchedImage,
   downloadUnmatchedImages,
@@ -24,6 +26,8 @@ interface ImageScanGridProps {
   matchedCodes: string[];
   imageFiles?: File[];
   reconciliationId?: string;
+  unmatchedWaybills?: UnmatchedWaybill[];
+  overdueAfterDays?: number;
 }
 
 export const ImageScanGrid = ({
@@ -31,6 +35,8 @@ export const ImageScanGrid = ({
   matchedCodes,
   imageFiles,
   reconciliationId,
+  unmatchedWaybills = [],
+  overdueAfterDays = 0,
 }: ImageScanGridProps) => {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
@@ -319,6 +325,7 @@ export const ImageScanGrid = ({
           filteredResults.map((item, index) => {
             const barcodeDisplay = getDisplayBarcode(item);
             const isFailed = !item.success || !barcodeDisplay;
+            const trackedWaybill = findWaybill(unmatchedWaybills, barcodeDisplay);
             const sourceIndex = scanResults.indexOf(item);
             const imageIndex = sourceIndex >= 0 ? sourceIndex : index;
             const isImageDownloading = downloadingImageIndex === imageIndex;
@@ -433,6 +440,11 @@ export const ImageScanGrid = ({
                       </div>
                     )}
                   </div>
+                  {trackedWaybill && (
+                    <div className="mt-2">
+                      <WaybillStatusBadge waybill={trackedWaybill} overdueAfterDays={overdueAfterDays} />
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer with filename, raw download, and click-to-preview controls */}

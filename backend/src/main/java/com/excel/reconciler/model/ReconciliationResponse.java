@@ -23,6 +23,10 @@ public class ReconciliationResponse {
     private String downloadFileName;
     private String excelSourceType;
     private long executionTimeMs;
+    private List<UnmatchedWaybill> unmatchedWaybills = List.of();
+    private int overdueCount;
+    private int overdueAfterDays;
+    private boolean trackingAvailable;
 
     public ReconciliationResponse() {
     }
@@ -177,5 +181,37 @@ public class ReconciliationResponse {
 
     public void setExecutionTimeMs(long executionTimeMs) {
         this.executionTimeMs = executionTimeMs;
+    }
+
+    public List<UnmatchedWaybill> getUnmatchedWaybills() {
+        return unmatchedWaybills;
+    }
+
+    public void setUnmatchedWaybills(List<UnmatchedWaybill> unmatchedWaybills) {
+        this.unmatchedWaybills = unmatchedWaybills;
+    }
+
+    public int getOverdueCount() {
+        return overdueCount;
+    }
+
+    public void setOverdueCount(int overdueCount) {
+        this.overdueCount = overdueCount;
+    }
+
+    public int getOverdueAfterDays() {
+        return overdueAfterDays;
+    }
+
+    public void setOverdueAfterDays(int overdueAfterDays) {
+        this.overdueAfterDays = overdueAfterDays;
+    }
+
+    public boolean isTrackingAvailable() {
+        return trackingAvailable;
+    }
+
+    public void setTrackingAvailable(boolean trackingAvailable) {
+        this.trackingAvailable = trackingAvailable;
     }
 }

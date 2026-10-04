@@ -2,6 +2,7 @@ package com.excel.reconciler.service;
 
 import com.excel.reconciler.model.BarcodeResult;
 import com.excel.reconciler.model.ReconciliationResponse;
+import com.excel.reconciler.model.UnmatchedWaybill;
 import com.excel.reconciler.util.SpreadsheetFileValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,19 +20,26 @@ public class ReconciliationService {
     private final BarcodeDecoderService barcodeDecoderService;
     private final ExcelHighlightService excelHighlightService;
     private final ExcelImageExtractorService excelImageExtractorService;
+    private final WaybillTrackingService waybillTrackingService;
+    private final UnmatchedWaybillSheetWriter unmatchedWaybillSheetWriter;
 
     public ReconciliationService(BarcodeDecoderService barcodeDecoderService,
                                  ExcelHighlightService excelHighlightService,
-                                 ExcelImageExtractorService excelImageExtractorService) {
+                                 ExcelImageExtractorService excelImageExtractorService,
+                                 WaybillTrackingService waybillTrackingService,
+                                 UnmatchedWaybillSheetWriter unmatchedWaybillSheetWriter) {
         this.barcodeDecoderService = barcodeDecoderService;
         this.excelHighlightService = excelHighlightService;
         this.excelImageExtractorService = excelImageExtractorService;
+        this.waybillTrackingService = waybillTrackingService;
+        this.unmatchedWaybillSheetWriter = unmatchedWaybillSheetWriter;
     }
 
     public ReconciliationResponse reconcile(MultipartFile excelFile,
                                            List<MultipartFile> imageFiles,
                                            String columnName,
-                                           boolean highlightFullRow) throws Exception {
+                                           boolean highlightFullRow,
+                                           String reconciliationId) throws Exception {
         long startTime = System.currentTimeMillis();
 
         if (excelFile == null || excelFile.isEmpty()) {
@@ -80,6 +88,7 @@ public class ReconciliationService {
 
         // 4. Align primary decoded value to matched code if present, and calculate unmatched codes
         Set<String> unmatchedCodes = new LinkedHashSet<>();
+        Set<String> matchedImageCodes = new LinkedHashSet<>();
         Set<String> matchedCodesSet = excelResult.getMatchedCodes();
         int unmatchedImagesCount = 0;
 
@@ -114,6 +123,7 @@ public class ReconciliationService {
                 // Image matched an Excel row
                 res.setDecodedValue(matchedCandidate);
                 res.setMatched(true);
+                matchedImageCodes.addAll(candidates);
             } else {
                 // Image did not match any row in Excel
                 res.setMatched(false);
@@ -126,8 +136,13 @@ public class ReconciliationService {
             }
         }
 
-        // 5. Build response
-        String base64Excel = Base64.getEncoder().encodeToString(excelResult.getModifiedExcelBytes());
+        // 5. Track unmatched waybills over time and list the overdue ones in the downloaded workbook
+        WaybillTrackingService.TrackingResult tracking =
+                waybillTrackingService.track(unmatchedCodes, matchedImageCodes, reconciliationId);
+        byte[] workbookWithTracking = appendUnmatchedSheet(excelResult.getModifiedExcelBytes(), tracking);
+
+        // 6. Build response
+        String base64Excel = Base64.getEncoder().encodeToString(workbookWithTracking);
         String originalFilename = excelFile.getOriginalFilename();
         String originalName = (originalFilename != null && !originalFilename.isBlank())
                 ? originalFilename
@@ -157,12 +172,27 @@ public class ReconciliationService {
         response.setDownloadFileName(downloadName);
         response.setExcelSourceType(excelSourceType);
         response.setExecutionTimeMs(executionTimeMs);
+        response.setTrackingAvailable(tracking.available());
+        response.setOverdueAfterDays(tracking.overdueAfterDays());
+        response.setUnmatchedWaybills(tracking.waybills());
+        response.setOverdueCount((int) tracking.overdueCount());
 
         log.info("Reconciliation complete: {} images scanned, {} decoded, {} matched in Excel (Sheet '{}') in {}ms",
                 response.getTotalImages(), decodedImagesCount, excelResult.getMatchedRowsCount(),
                 excelResult.getActiveSheetName(), executionTimeMs);
 
         return response;
+    }
+
+    private byte[] appendUnmatchedSheet(byte[] workbookBytes, WaybillTrackingService.TrackingResult tracking) {
+        List<UnmatchedWaybill> waybills = tracking.waybills();
+        try {
+            return unmatchedWaybillSheetWriter.append(workbookBytes, waybills, tracking.overdueAfterDays());
+        } catch (Exception e) {
+            // The extra sheet is a convenience; never lose the highlighted workbook because of it
+            log.warn("Could not add the unmatched waybills sheet to the workbook: {}", e.getMessage());
+            return workbookBytes;
+        }
     }
 
     private boolean isCodeMatched(String decoded, Set<String> matchedCodesSet) {

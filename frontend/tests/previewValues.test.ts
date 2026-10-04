@@ -14,7 +14,7 @@ test('preview renders backend cell values without outlet localization', () => {
   assert.doesNotMatch(source, /localizePreviewCellValue|previewLocalization/);
 });
 
-test('preview exposes schema confidence without changing backend cell text', () => {
+test('preview header omits the sheet, target and confidence badges while the response keeps the confidence field', () => {
   const componentPath = fileURLToPath(new URL(
     '../src/features/reconciliation/components/ExcelPreviewTable.tsx',
     import.meta.url,
@@ -27,5 +27,6 @@ test('preview exposes schema confidence without changing backend cell text', () 
   const types = readFileSync(typePath, 'utf8');
 
   assert.match(types, /matchedColumnConfidence\?: number;/);
-  assert.match(component, /matchedColumnConfidence/);
+  assert.doesNotMatch(component, /preview\.(sheet|target|confidence)'/);
+  assert.doesNotMatch(component, /matchedColumnConfidence|activeSheetName/);
 });

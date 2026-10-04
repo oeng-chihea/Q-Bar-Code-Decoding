@@ -167,7 +167,7 @@ public class BarcodeReconciliationControllerTest {
 
         var ex = org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalArgumentException.class,
-                () -> reconciliationService.reconcile(barcodeInExcelSlot, List.of(imgFile), "QR Barcode", false)
+                () -> reconciliationService.reconcile(barcodeInExcelSlot, List.of(imgFile), "QR Barcode", false, "test-reconciliation")
         );
         org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("Barcode images are not supported"));
     }
