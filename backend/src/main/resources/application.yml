@@ -16,6 +16,11 @@ spring:
     virtual-host: ${RABBITMQ_VIRTUAL_HOST:/}
     ssl:
       enabled: ${RABBITMQ_SSL_ENABLED:false}
+  autoconfigure:
+    # The MySQL DataSource is created by DatabaseConfig only when MYSQL_URL is set,
+    # so the app still starts (and tests still run) without a database.
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
 
 gemini:
   api:
@@ -30,3 +35,10 @@ app:
     allowed-origins: "${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000}"
   reconciliation:
     storage-root: ${RECONCILIATION_STORAGE_ROOT:runtime/reconciliations}
+    # Stored uploads/results of finished jobs older than this are deleted hourly (0 disables cleanup)
+    retention-hours: ${RECONCILIATION_RETENTION_HOURS:24}
+  database:
+    url: ${MYSQL_URL:}
+    username: ${MYSQL_USERNAME:}
+    password: ${MYSQL_PASSWORD:}
+    max-pool-size: ${MYSQL_MAX_POOL_SIZE:5}

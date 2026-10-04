@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
@@ -178,8 +179,59 @@ public class LocalReconciliationFileStorageService {
         return "application/octet-stream";
     }
 
+    public List<String> listStoredReconciliationIds() throws IOException {
+        if (!Files.isDirectory(storageRoot)) {
+            return List.of();
+        }
+        try (var stream = Files.list(storageRoot)) {
+            return stream.filter(Files::isDirectory)
+                    .map(path -> path.getFileName().toString())
+                    .filter(this::isValidReconciliationId)
+                    .toList();
+        }
+    }
+
+    /**
+     * Returns the newest modification time of any file inside the reconciliation directory,
+     * so a folder still being written to is never treated as old.
+     */
+    public Instant lastModified(String reconciliationId) throws IOException {
+        Path directory = directoryFor(reconciliationId);
+        try (var stream = Files.walk(directory)) {
+            return stream.map(this::lastModifiedOrNow)
+                    .max(Comparator.naturalOrder())
+                    .orElseGet(Instant::now);
+        }
+    }
+
+    public void deleteReconciliation(String reconciliationId) throws IOException {
+        Path directory = directoryFor(reconciliationId);
+        if (!Files.exists(directory)) {
+            return;
+        }
+        // Delete children before their parent directories
+        try (var stream = Files.walk(directory)) {
+            for (Path path : stream.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        }
+    }
+
+    private Instant lastModifiedOrNow(Path path) {
+        try {
+            return Files.getLastModifiedTime(path).toInstant();
+        } catch (IOException e) {
+            // Treat unreadable entries as fresh so cleanup never deletes them by mistake
+            return Instant.now();
+        }
+    }
+
+    private boolean isValidReconciliationId(String reconciliationId) {
+        return reconciliationId != null && reconciliationId.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,100}");
+    }
+
     private void validateReconciliationId(String reconciliationId) {
-        if (reconciliationId == null || !reconciliationId.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,100}")) {
+        if (!isValidReconciliationId(reconciliationId)) {
             throw new IllegalArgumentException("Invalid reconciliation ID");
         }
     }

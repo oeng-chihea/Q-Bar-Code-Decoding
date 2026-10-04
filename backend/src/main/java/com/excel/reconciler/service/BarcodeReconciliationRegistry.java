@@ -64,6 +64,16 @@ public class BarcodeReconciliationRegistry {
         require(reconciliationId).imagePaths = imagePaths != null ? List.copyOf(imagePaths) : List.of();
     }
 
+    public boolean isActive(String reconciliationId) {
+        Record record = records.get(reconciliationId);
+        return record != null
+                && (record.status == ReconciliationStatus.QUEUED || record.status == ReconciliationStatus.PROCESSING);
+    }
+
+    public void remove(String reconciliationId) {
+        records.remove(reconciliationId);
+    }
+
     public static final class Record {
         private final String reconciliationId;
         private volatile ReconciliationStatus status;
