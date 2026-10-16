@@ -14,6 +14,7 @@ import {
 import type { BarcodeResult, UnmatchedWaybill } from '@/features/reconciliation/model/types';
 import { WaybillStatusBadge } from '@/features/reconciliation/components/WaybillStatusBadge';
 import { findWaybill } from '@/features/reconciliation/utils/waybillTracking';
+import { groupUnmatchedByBarcode } from '@/features/reconciliation/utils/unmatchedGrouping';
 import {
   downloadUnmatchedImage,
   downloadUnmatchedImages,
@@ -133,9 +134,6 @@ export const ImageScanGrid = ({
     return !isItemMatched(result);
   };
 
-  // ONLY keep truly unmatched items (did not match any row in Excel or failed decodes)
-  const unmatchedResults = scanResults.filter(isUnmatched);
-
   const getDisplayBarcode = (item: BarcodeResult): string | undefined => {
     if (item.decodedValue && item.decodedValue.trim() !== '') {
       return item.decodedValue.trim();
@@ -149,17 +147,20 @@ export const ImageScanGrid = ({
     return undefined;
   };
 
-  const filteredResults = unmatchedResults.filter((item) => {
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const codeMatch = item.decodedValue?.toLowerCase().includes(q);
-      const fileMatch = item.filename?.toLowerCase().includes(q);
-      const multiMatch = item.allExtractedValues?.some((v) =>
-        v.toLowerCase().includes(q)
-      );
-      return codeMatch || fileMatch || multiMatch;
-    }
-    return true;
+  // ONLY keep truly unmatched items (did not match any row in Excel or failed decodes).
+  // "Download all" still covers every photo; the cards below show each waybill once.
+  const unmatchedResults = scanResults.filter(isUnmatched);
+  const unmatchedGroups = groupUnmatchedByBarcode(scanResults, isUnmatched, getDisplayBarcode);
+  const uniqueWaybillCount = unmatchedGroups.filter((group) => group.barcode).length;
+
+  const filteredGroups = unmatchedGroups.filter(({ photos }) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return photos.some(({ item }) =>
+      item.decodedValue?.toLowerCase().includes(q) ||
+      item.filename?.toLowerCase().includes(q) ||
+      item.allExtractedValues?.some((v) => v.toLowerCase().includes(q))
+    );
   });
 
   const handleDownloadUnmatched = async () => {
@@ -253,6 +254,7 @@ export const ImageScanGrid = ({
             </h3>
             <p className="break-words text-xs text-[#8E929E] m-0 mt-0.5">
               {t('unmatched.subtitle')}
+              {uniqueWaybillCount > 0 && ` · ${t('unmatched.uniqueCount', { count: uniqueWaybillCount })}`}
             </p>
           </div>
         </div>
@@ -315,19 +317,20 @@ export const ImageScanGrid = ({
 
       {/* Grid Cards */}
       <div className="min-w-0 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5 max-h-[30rem] overflow-y-auto pr-1">
-        {filteredResults.length === 0 ? (
+        {filteredGroups.length === 0 ? (
           <div className="col-span-full py-8 text-center text-xs text-[#737887] bg-[#16171B] rounded-md border border-[#26272E]">
             {unmatchedResults.length === 0
               ? t('unmatched.none')
               : t('unmatched.noSearch')}
           </div>
         ) : (
-          filteredResults.map((item, index) => {
-            const barcodeDisplay = getDisplayBarcode(item);
+          filteredGroups.map((group, index) => {
+            // The first photo of a waybill is the card's main photo; the rest are listed in the footer
+            const { item, sourceIndex: imageIndex } = group.photos[0];
+            const extraPhotos = group.photos.slice(1);
+            const barcodeDisplay = group.barcode;
             const isFailed = !item.success || !barcodeDisplay;
             const trackedWaybill = findWaybill(unmatchedWaybills, barcodeDisplay);
-            const sourceIndex = scanResults.indexOf(item);
-            const imageIndex = sourceIndex >= 0 ? sourceIndex : index;
             const isImageDownloading = downloadingImageIndex === imageIndex;
 
             const onCardClick = () => {
@@ -388,7 +391,7 @@ export const ImageScanGrid = ({
 
             return (
               <div
-                key={index}
+                key={group.key}
                 onClick={onCardClick}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
@@ -410,6 +413,8 @@ export const ImageScanGrid = ({
                   <div className="flex items-center justify-between gap-1 mb-2.5">
                     <span className="text-[11px] font-medium text-[#8E929E] truncate">
                       {t('unmatched.image', { number: index + 1 })}
+                      {extraPhotos.length > 0 &&
+                        ` · ${t('unmatched.photoCount', { count: group.photos.length })}`}
                     </span>
 
                     {isFailed ? (
@@ -448,7 +453,8 @@ export const ImageScanGrid = ({
                 </div>
 
                 {/* Footer with filename, raw download, and click-to-preview controls */}
-                <div className="flex min-w-0 items-center justify-between gap-2 pt-2.5 border-t border-[#26272E] mt-3">
+                <div className="mt-3 border-t border-[#26272E] pt-2.5">
+                <div className="flex min-w-0 items-center justify-between gap-2">
                   <span className="min-w-0 flex-1 truncate text-[11px] text-[#737887]" title={item.filename}>
                     {item.filename}
                   </span>
@@ -485,6 +491,36 @@ export const ImageScanGrid = ({
                       <span className="hidden sm:inline">{t('unmatched.preview')}</span>
                     </button>
                   </div>
+                </div>
+
+                {/* Other photos of the same waybill */}
+                {extraPhotos.map(({ item: extra, sourceIndex: extraIndex }) => (
+                  <div
+                    key={extraIndex}
+                    className="flex min-w-0 items-center justify-between gap-2 border-t border-[#26272E]/60"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-[#737887]" title={extra.filename}>
+                      {extra.filename}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDownloadImage(extra, extraIndex, getFileForItem(extra, extraIndex));
+                      }}
+                      disabled={!reconciliationId || isDownloading || downloadingImageIndex !== null}
+                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-[#A0A5B5] hover:bg-[#2B2D35] hover:text-[#A0E3E2] transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                      title={t('unmatched.downloadRaw')}
+                      aria-label={t('unmatched.downloadRaw')}
+                    >
+                      {downloadingImageIndex === extraIndex ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                ))}
                 </div>
               </div>
             );

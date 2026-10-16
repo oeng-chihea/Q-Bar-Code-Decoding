@@ -80,6 +80,8 @@ const khmer = {
   'unmatched.preview': 'ចុចដើម្បីមើលរូបភាព',
   'unmatched.previewTitle': 'មើលរូបភាពបាកូដ',
   'unmatched.image': 'រូបភាព #{{number}}',
+  'unmatched.photoCount': '{{count}} រូបភាព',
+  'unmatched.uniqueCount': '{{count}} លេខវ៉ាយប៊ីលមិនស្ទួន',
   'unmatched.unmatchedTag': 'មិនត្រូវគ្នា',
   'unmatched.noBarcodeTag': 'រកមិនឃើញបាកូដ',
   'unmatched.download': 'ទាញយករូបភាពមិនត្រូវគ្នា',
