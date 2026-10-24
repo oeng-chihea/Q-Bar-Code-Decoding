@@ -191,14 +191,26 @@ public class SpreadsheetSchemaDetector {
                 identifierRate, identifierAlias);
     }
 
+    /**
+     * Header labels become preview keys, so each one must be unique: a repeated
+     * label gets a " (2)", " (3)" suffix instead of hiding the earlier column.
+     */
     private List<String> readHeaders(Row row, DataFormatter formatter) {
         List<String> headers = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
         for (int columnIndex = 0; columnIndex < row.getLastCellNum(); columnIndex++) {
             Cell cell = row.getCell(columnIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
             String value = formatter.formatCellValue(cell);
+            // Labels such as "Create date (DD/MM/YYYY)" are text, not formulas
             boolean formulaLike = cell.getCellType() == org.apache.poi.ss.usermodel.CellType.FORMULA
-                    || value.startsWith("=") || value.contains("(") || value.contains("!");
-            headers.add(value.isBlank() || formulaLike ? "Column " + (columnIndex + 1) : value);
+                    || value.startsWith("=");
+            String header = value.isBlank() || formulaLike ? "Column " + (columnIndex + 1) : value;
+
+            String unique = header;
+            for (int copy = 2; !seen.add(unique); copy++) {
+                unique = header + " (" + copy + ")";
+            }
+            headers.add(unique);
         }
         return headers;
     }

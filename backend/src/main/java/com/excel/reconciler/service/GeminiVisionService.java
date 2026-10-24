@@ -43,6 +43,9 @@ public class GeminiVisionService {
     @Value("${gemini.api.timeout-seconds:40}")
     private int timeoutSeconds = 40;
 
+    @Value("${gemini.api.media-resolution:}")
+    private String mediaResolution = "";
+
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final Executor executor;
@@ -171,38 +174,13 @@ public class GeminiVisionService {
         }
 
         try {
-            String resolvedMimeType = (mimeType == null || !mimeType.startsWith("image/")) ? "image/jpeg" : mimeType;
-            String base64Image = Base64.getEncoder().encodeToString(imageBytes);
-
-            Map<String, Object> textPart = Map.of("text", prompt);
-            Map<String, Object> inlineData = Map.of(
-                    "mime_type", resolvedMimeType,
-                    "data", base64Image
-            );
-            Map<String, Object> imagePart = Map.of("inline_data", inlineData);
-
-            Map<String, Object> userContent = Map.of(
-                    "role", "user",
-                    "parts", List.of(textPart, imagePart)
-            );
-
-            Map<String, Object> generationConfig = new LinkedHashMap<>();
-            generationConfig.put("temperature", 0.0);
-            generationConfig.put("responseMimeType", "application/json");
-            if (responseSchema != null && !responseSchema.isEmpty()) {
-                generationConfig.put("responseSchema", responseSchema);
-            }
-
-            Map<String, Object> requestBody = new LinkedHashMap<>();
-            if (systemInstruction != null && !systemInstruction.isBlank()) {
-                requestBody.put("systemInstruction", Map.of(
-                        "parts", List.of(Map.of("text", systemInstruction))
-                ));
-            }
-            requestBody.put("contents", List.of(userContent));
-            requestBody.put("generationConfig", generationConfig);
-
-            String requestJson = objectMapper.writeValueAsString(requestBody);
+            String requestJson = objectMapper.writeValueAsString(
+                    buildRequestBody(imageBytes, mimeType, prompt, responseSchema, systemInstruction, true));
+            // Sent instead when a model rejects the media resolution setting
+            String plainRequestJson = hasMediaResolution()
+                    ? objectMapper.writeValueAsString(
+                            buildRequestBody(imageBytes, mimeType, prompt, responseSchema, systemInstruction, false))
+                    : null;
 
             String configured = getConfiguredModel();
             List<String> modelsToTry = new ArrayList<>();
@@ -216,9 +194,6 @@ public class GeminiVisionService {
             if (!modelsToTry.contains("gemini-3.6-flash")) {
                 modelsToTry.add("gemini-3.6-flash");
             }
-            if (!modelsToTry.contains("gemini-1.5-flash")) {
-                modelsToTry.add("gemini-1.5-flash");
-            }
 
             HttpResponse<String> response = null;
             String usedModel = null;
@@ -226,15 +201,14 @@ public class GeminiVisionService {
             for (String targetModel : modelsToTry) {
                 String targetUrl = String.format("%s/%s:generateContent", configuredBaseUrl(), targetModel);
                 try {
-                    HttpRequest request = HttpRequest.newBuilder()
-                            .uri(URI.create(targetUrl))
-                            .header("Content-Type", "application/json")
-                            .header("x-goog-api-key", activeKey)
-                            .timeout(Duration.ofSeconds(timeoutSeconds))
-                            .POST(HttpRequest.BodyPublishers.ofString(requestJson))
-                            .build();
-
-                    response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    response = httpClient.send(buildHttpRequest(targetUrl, activeKey, requestJson),
+                            HttpResponse.BodyHandlers.ofString());
+                    if (response.statusCode() == 400 && plainRequestJson != null) {
+                        log.warn("Gemini model {} rejected media resolution {}. Retrying without it...",
+                                targetModel, mediaResolution);
+                        response = httpClient.send(buildHttpRequest(targetUrl, activeKey, plainRequestJson),
+                                HttpResponse.BodyHandlers.ofString());
+                    }
                     if (response.statusCode() >= 200 && response.statusCode() < 300) {
                         usedModel = targetModel;
                         break;
@@ -281,6 +255,59 @@ public class GeminiVisionService {
             log.error("Failed to call Gemini vision API: {}", e.getMessage());
             return new JsonResponse(0, "", e.getMessage(), null);
         }
+    }
+
+    Map<String, Object> buildRequestBody(byte[] imageBytes, String mimeType, String prompt,
+                                         Map<String, Object> responseSchema, String systemInstruction,
+                                         boolean includeMediaResolution) {
+        String resolvedMimeType = (mimeType == null || !mimeType.startsWith("image/")) ? "image/jpeg" : mimeType;
+        String base64Image = Base64.getEncoder().encodeToString(imageBytes);
+
+        Map<String, Object> textPart = Map.of("text", prompt);
+        Map<String, Object> inlineData = Map.of(
+                "mime_type", resolvedMimeType,
+                "data", base64Image
+        );
+        Map<String, Object> imagePart = Map.of("inline_data", inlineData);
+
+        Map<String, Object> userContent = Map.of(
+                "role", "user",
+                "parts", List.of(textPart, imagePart)
+        );
+
+        Map<String, Object> generationConfig = new LinkedHashMap<>();
+        generationConfig.put("temperature", 0.0);
+        generationConfig.put("responseMimeType", "application/json");
+        if (responseSchema != null && !responseSchema.isEmpty()) {
+            generationConfig.put("responseSchema", responseSchema);
+        }
+        if (includeMediaResolution && hasMediaResolution()) {
+            generationConfig.put("mediaResolution", mediaResolution.trim());
+        }
+
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        if (systemInstruction != null && !systemInstruction.isBlank()) {
+            requestBody.put("systemInstruction", Map.of(
+                    "parts", List.of(Map.of("text", systemInstruction))
+            ));
+        }
+        requestBody.put("contents", List.of(userContent));
+        requestBody.put("generationConfig", generationConfig);
+        return requestBody;
+    }
+
+    private HttpRequest buildHttpRequest(String targetUrl, String apiKey, String requestJson) {
+        return HttpRequest.newBuilder()
+                .uri(URI.create(targetUrl))
+                .header("Content-Type", "application/json")
+                .header("x-goog-api-key", apiKey)
+                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                .build();
+    }
+
+    private boolean hasMediaResolution() {
+        return mediaResolution != null && !mediaResolution.isBlank();
     }
 
     public String getConfiguredModel() {

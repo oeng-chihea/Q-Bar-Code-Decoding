@@ -219,7 +219,11 @@ Gemini configuration:
 GEMINI_API_KEY=<Gemini API key>
 GEMINI_API_MODEL=gemini-flash-lite-latest
 GEMINI_API_URL=https://generativelanguage.googleapis.com/v1beta/models
+# Optional: how closely Gemini looks at each image (empty = model default)
+GEMINI_MEDIA_RESOLUTION=MEDIA_RESOLUTION_HIGH
 ~~~
+
+The table's creation column ("Create Time" in the image) is not read from the image. It is renamed "Create Date" and every row is filled with the day of the upload (`yyyy-MM-dd`, in the `app.waybill.zone` time zone), so scanning today counts as today.
 
 Other application settings:
 

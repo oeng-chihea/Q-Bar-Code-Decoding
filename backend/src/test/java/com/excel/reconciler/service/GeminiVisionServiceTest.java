@@ -2,10 +2,12 @@ package com.excel.reconciler.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -53,6 +55,31 @@ class GeminiVisionServiceTest {
         assertEquals(401, response.statusCode());
         assertFalse(response.isSuccessful());
         assertTrue(response.errorMessage().contains("Gemini API key is missing"));
+    }
+
+    @Test
+    void requestAsksForConfiguredMediaResolutionUnlessDisabledForRetry() {
+        GeminiVisionService service = new GeminiVisionService(new ObjectMapper(), Runnable::run);
+        ReflectionTestUtils.setField(service, "mediaResolution", "MEDIA_RESOLUTION_HIGH");
+
+        assertEquals("MEDIA_RESOLUTION_HIGH",
+                generationConfig(service.buildRequestBody(new byte[]{1}, "image/png", "p", Map.of(), null, true))
+                        .get("mediaResolution"));
+        assertFalse(generationConfig(service.buildRequestBody(new byte[]{1}, "image/png", "p", Map.of(), null, false))
+                .containsKey("mediaResolution"));
+    }
+
+    @Test
+    void requestOmitsMediaResolutionWhenNotConfigured() {
+        GeminiVisionService service = new GeminiVisionService(new ObjectMapper(), Runnable::run);
+
+        assertFalse(generationConfig(service.buildRequestBody(new byte[]{1}, "image/png", "p", Map.of(), null, true))
+                .containsKey("mediaResolution"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> generationConfig(Map<String, Object> requestBody) {
+        return (Map<String, Object>) requestBody.get("generationConfig");
     }
 
     @Test

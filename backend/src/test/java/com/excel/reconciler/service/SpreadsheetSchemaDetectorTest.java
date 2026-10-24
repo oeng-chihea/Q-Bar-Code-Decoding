@@ -65,4 +65,28 @@ class SpreadsheetSchemaDetectorTest {
             assertEquals("ព័ត៌មាន", result.resolvedColumnName());
         }
     }
+
+    @Test
+    void keepsBracketedHeadersAndGivesRepeatedHeadersUniqueNames() throws Exception {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Inventory");
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue("Waybill Number");
+            header.createCell(1).setCellValue("Create date (DD/MM/YYYY)");
+            header.createCell(2).setCellValue("Date");
+            header.createCell(3).setCellValue("Date");
+
+            Row data = sheet.createRow(1);
+            data.createCell(0).setCellValue("J01396943696");
+            data.createCell(1).setCellValue("20/10/2026");
+            data.createCell(2).setCellValue("21/10/2026");
+            data.createCell(3).setCellValue("22/10/2026");
+
+            SpreadsheetSchemaDetector.Detection result = detector.detect(
+                    sheet, new DataFormatter(), Set.of("J01396943696"), null);
+
+            assertEquals(List.of("Waybill Number", "Create date (DD/MM/YYYY)", "Date", "Date (2)"),
+                    result.headers());
+        }
+    }
 }
