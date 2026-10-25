@@ -222,4 +222,22 @@ class BarcodeDecoderServiceTest {
         assertEquals(null, result.getCreateDateProblem());
         verify(gemini, never()).extractReceiptCreatedParallel(any());
     }
+
+    @Test
+    void usedUpDailyQuotaIsReportedAsSuchAndNotRetried() throws Exception {
+        ZXingDecoderService zxing = mock(ZXingDecoderService.class);
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        BarcodeDecoderService service = serviceWithToday(zxing, gemini);
+        MockMultipartFile image = new MockMultipartFile("images", "a.png", "image/png", new byte[]{1});
+
+        when(zxing.decode(any(byte[].class))).thenReturn(Collections.singletonList(
+                new Result("01400310465", null, null, BarcodeFormat.CODE_128)));
+        when(gemini.extractReceiptCreatedParallel(any()))
+                .thenReturn(List.of(GeminiVisionService.ReceiptDateRead.quotaUsedUp()));
+
+        BarcodeResult result = service.decodeBatch(List.of(image)).get(0);
+
+        assertEquals("QUOTA_EXHAUSTED", result.getCreateDateProblem());
+        verify(gemini, times(1)).extractReceiptCreatedParallel(any());
+    }
 }

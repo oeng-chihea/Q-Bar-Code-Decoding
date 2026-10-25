@@ -85,7 +85,7 @@ class GeminiVisionServiceTest {
     @Test
     void configuredModelDefaultsToGeminiFlashLite() {
         GeminiVisionService service = new GeminiVisionService(new ObjectMapper(), Runnable::run);
-        assertEquals("gemini-flash-lite-latest", service.getConfiguredModel());
+        assertEquals("gemini-3.5-flash-lite", service.getConfiguredModel());
     }
 
     @Test
@@ -131,5 +131,76 @@ class GeminiVisionServiceTest {
 
         assertFalse(reading.failed());
         assertEquals("", reading.text());
+    }
+
+    private static final String DAILY_QUOTA_BODY =
+            "{\"error\":{\"code\":429,\"details\":[{\"violations\":[{\"quotaId\":\"GenerateRequestsPerDayPerProjectPerModel-FreeTier\"}]}]}}";
+    private static final String MINUTE_QUOTA_BODY =
+            "{\"error\":{\"code\":429,\"details\":[{\"violations\":[{\"quotaId\":\"GenerateRequestsPerMinutePerProjectPerModel-FreeTier\"}]}]}}";
+
+    /** Local stand-in for the Gemini API that answers every request with the given 429 body and counts them. */
+    private static com.sun.net.httpserver.HttpServer apiAnswering429(String body, java.util.concurrent.atomic.AtomicInteger hits)
+            throws java.io.IOException {
+        com.sun.net.httpserver.HttpServer server =
+                com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            hits.incrementAndGet();
+            byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(429, bytes.length);
+            try (var out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+        server.start();
+        return server;
+    }
+
+    private static GeminiVisionService serviceAgainst(com.sun.net.httpserver.HttpServer server) {
+        GeminiVisionService service = new GeminiVisionService(new ObjectMapper(), Runnable::run);
+        ReflectionTestUtils.setField(service, "apiKey", "test-key");
+        ReflectionTestUtils.setField(service, "baseUrl", "http://127.0.0.1:" + server.getAddress().getPort() + "/models");
+        ReflectionTestUtils.setField(service, "dateReadRetryDelayMs", 0L);
+        return service;
+    }
+
+    @Test
+    void dailyQuotaOnEveryModelIsFlaggedAndNotRetried() throws Exception {
+        var hits = new java.util.concurrent.atomic.AtomicInteger();
+        var server = apiAnswering429(DAILY_QUOTA_BODY, hits);
+        try {
+            GeminiVisionService service = serviceAgainst(server);
+
+            var first = service.extractReceiptCreatedText(new byte[]{1}, "image/jpeg");
+
+            assertTrue(first.failed());
+            assertTrue(first.quotaExhausted());
+            // Configured model plus the three distinct fallbacks (one of them is the configured one), once each
+            assertEquals(3, hits.get());
+
+            // Models known to be out of quota are skipped: no further requests at all
+            var second = service.extractReceiptCreatedText(new byte[]{2}, "image/jpeg");
+            assertTrue(second.quotaExhausted());
+            assertEquals(3, hits.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void perMinuteLimitIsNotTreatedAsADailyQuota() throws Exception {
+        var hits = new java.util.concurrent.atomic.AtomicInteger();
+        var server = apiAnswering429(MINUTE_QUOTA_BODY, hits);
+        try {
+            GeminiVisionService service = serviceAgainst(server);
+
+            var reading = service.extractReceiptCreatedText(new byte[]{1}, "image/jpeg");
+
+            assertTrue(reading.failed());
+            assertFalse(reading.quotaExhausted());
+            // 3 read attempts, each going through the 3 models in the chain
+            assertEquals(9, hits.get());
+        } finally {
+            server.stop(0);
+        }
     }
 }

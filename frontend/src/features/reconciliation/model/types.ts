@@ -13,7 +13,7 @@ export interface BarcodeResult {
   // The receipt's CREATED date (yyyy-MM-dd); createDateProblem is set instead when it is missing or invalid
   createDate?: string;
   createDateText?: string;
-  createDateProblem?: 'NOT_FOUND' | 'UNREADABLE' | 'FUTURE_DATE' | 'READ_FAILED';
+  createDateProblem?: 'NOT_FOUND' | 'UNREADABLE' | 'FUTURE_DATE' | 'READ_FAILED' | 'QUOTA_EXHAUSTED';
 }
 
 export interface UnmatchedImageDownload {

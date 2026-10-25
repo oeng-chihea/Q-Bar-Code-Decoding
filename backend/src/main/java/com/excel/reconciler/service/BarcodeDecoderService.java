@@ -172,7 +172,7 @@ public class BarcodeDecoderService {
                 localScans, indexesByContent, new ArrayList<>(indexesByContent.keySet()));
 
         List<String> failed = readings.entrySet().stream()
-                .filter(entry -> entry.getValue().failed())
+                .filter(entry -> entry.getValue().failed() && !entry.getValue().quotaExhausted())
                 .map(Map.Entry::getKey)
                 .toList();
         if (!failed.isEmpty()) {
@@ -219,7 +219,9 @@ public class BarcodeDecoderService {
 
     private void applyReading(BarcodeResult result, GeminiVisionService.ReceiptDateRead reading, LocalDate today) {
         if (reading.failed()) {
-            result.setCreateDateProblem(ReceiptDateValidator.Problem.READ_FAILED.name());
+            result.setCreateDateProblem((reading.quotaExhausted()
+                    ? ReceiptDateValidator.Problem.QUOTA_EXHAUSTED
+                    : ReceiptDateValidator.Problem.READ_FAILED).name());
             return;
         }
         ReceiptDateValidator.Result validated = ReceiptDateValidator.validate(reading.text(), today);

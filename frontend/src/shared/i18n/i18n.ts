@@ -104,6 +104,7 @@ const khmer = {
   'receiptDate.problem.NOT_FOUND': 'រកមិនឃើញកាលបរិច្ឆេទ CREATED លើវិក្កយបត្រ',
   'receiptDate.problem.UNREADABLE': 'មិនអាចអានកាលបរិច្ឆេទ CREATED បាន ({{text}})',
   'receiptDate.problem.READ_FAILED': 'ការអានកាលបរិច្ឆេទបរាជ័យបណ្តោះអាសន្ន (ម៉ាស៊ីនបម្រើជាប់រវល់) សូមស្កេនម្តងទៀត',
+  'receiptDate.problem.QUOTA_EXHAUSTED': 'ដែនកំណត់ប្រចាំថ្ងៃរបស់ Gemini (កម្រិតឥតគិតថ្លៃ) ពេញហើយ សូមព្យាយាមម្តងទៀតបន្ទាប់ពីម៉ោង 2-3 រសៀល (ម៉ោងកម្ពុជា)',
   'receiptDate.problem.FUTURE_DATE': 'កាលបរិច្ឆេទ CREATED នៅអនាគត ({{text}})',
   'waybill.title': 'តាមដានលេខវ៉ាយប៊ីលមិនត្រូវគ្នា',
   'waybill.subtitle': 'ថ្ងៃកំណត់ = ថ្ងៃចាប់ផ្តើម + {{days}} ថ្ងៃ។ លេខវ៉ាយប៊ីលដែលត្រូវគ្នាមិនត្រូវបានតាមដានទេ។',

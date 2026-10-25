@@ -50,3 +50,10 @@ test('tells a failed date read apart from a receipt without a date', () => {
     translate('receiptDate.problem.NOT_FOUND'),
   );
 });
+
+test('tells a used-up daily quota apart from other date read problems', () => {
+  assert.notEqual(
+    translate('receiptDate.problem.QUOTA_EXHAUSTED'),
+    translate('receiptDate.problem.READ_FAILED'),
+  );
+});

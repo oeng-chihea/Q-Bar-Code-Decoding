@@ -14,13 +14,16 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -28,13 +31,19 @@ import java.util.concurrent.Executor;
 @Service
 public class GeminiVisionService {
     private static final Logger log = LoggerFactory.getLogger(GeminiVisionService.class);
-    private static final String DEFAULT_MODEL = "gemini-flash-lite-latest";
+    private static final String DEFAULT_MODEL = "gemini-3.5-flash-lite";
+    // Tried in this order after the configured model. Every model has its own daily quota, so listing
+    // different models adds free requests; listing an alias of one already tried would only repeat it.
+    private static final List<String> FALLBACK_MODELS =
+            List.of("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash");
+    // After a model reports its daily quota used up it is skipped for this long, then tried once again
+    private static final Duration QUOTA_RECHECK_INTERVAL = Duration.ofMinutes(15);
     private static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
     @Value("${gemini.api.key:}")
     private String apiKey;
 
-    @Value("${gemini.api.model:gemini-flash-lite-latest}")
+    @Value("${gemini.api.model:gemini-3.5-flash-lite}")
     private String model = DEFAULT_MODEL;
 
     @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models}")
@@ -56,13 +65,23 @@ public class GeminiVisionService {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final Executor executor;
+    private final Map<String, Instant> quotaExhaustedUntil = new ConcurrentHashMap<>();
 
     public record BarcodeImage(byte[] imageBytes, String mimeType) {
     }
 
-    public record JsonResponse(int statusCode, String content, String errorMessage, String usedModel) {
+    /**
+     * @param dailyQuotaExhausted every model that was tried (or skipped) is out of its free-tier requests for
+     *                            the day, so repeating the call cannot help until the quota resets
+     */
+    public record JsonResponse(int statusCode, String content, String errorMessage, String usedModel,
+                               boolean dailyQuotaExhausted) {
+        public JsonResponse(int statusCode, String content, String errorMessage, String usedModel) {
+            this(statusCode, content, errorMessage, usedModel, false);
+        }
+
         public JsonResponse(int statusCode, String content, String errorMessage) {
-            this(statusCode, content, errorMessage, null);
+            this(statusCode, content, errorMessage, null, false);
         }
 
         public boolean isSuccessful() {
@@ -147,15 +166,21 @@ public class GeminiVisionService {
     /**
      * Outcome of reading a receipt's CREATED date. {@code failed} means the request itself did not work
      * (rate limit, busy server, timeout), so an empty {@code text} is only "no date on the receipt"
-     * when {@code failed} is false.
+     * when {@code failed} is false. {@code quotaExhausted} marks a failure that will not clear until the
+     * daily quota resets.
      */
-    public record ReceiptDateRead(String text, boolean failed) {
+    public record ReceiptDateRead(String text, boolean failed, boolean quotaExhausted) {
         public static ReceiptDateRead found(String text) {
-            return new ReceiptDateRead(text == null ? "" : text, false);
+            return new ReceiptDateRead(text == null ? "" : text, false, false);
         }
 
         public static ReceiptDateRead failure() {
-            return new ReceiptDateRead("", true);
+            return new ReceiptDateRead("", true, false);
+        }
+
+        /** Failed because the free-tier daily quota is used up, which retrying cannot fix. */
+        public static ReceiptDateRead quotaUsedUp() {
+            return new ReceiptDateRead("", true, true);
         }
     }
 
@@ -194,6 +219,9 @@ public class GeminiVisionService {
                 } catch (Exception e) {
                     log.debug("Gemini receipt date response parse failed: {}", e.getMessage());
                 }
+            } else if (response.dailyQuotaExhausted()) {
+                log.warn("Gemini daily quota is used up for every model; not retrying the receipt date read");
+                return ReceiptDateRead.quotaUsedUp();
             } else {
                 log.warn("Gemini receipt date extraction failed with status {} (attempt {}/{}): {}",
                         response.statusCode(), attempt, attempts, response.errorMessage());
@@ -288,18 +316,30 @@ public class GeminiVisionService {
                             buildRequestBody(imageBytes, mimeType, prompt, responseSchema, systemInstruction, false))
                     : null;
 
-            String configured = getConfiguredModel();
             List<String> modelsToTry = new ArrayList<>();
-            modelsToTry.add(configured);
-            if (!modelsToTry.contains("gemini-flash-lite-latest")) {
-                modelsToTry.add("gemini-flash-lite-latest");
+            modelsToTry.add(getConfiguredModel());
+            for (String fallback : FALLBACK_MODELS) {
+                if (!modelsToTry.contains(fallback)) {
+                    modelsToTry.add(fallback);
+                }
             }
-            if (!modelsToTry.contains("gemini-3.5-flash-lite")) {
-                modelsToTry.add("gemini-3.5-flash-lite");
+
+            // Models that recently reported their daily quota used up are not worth another request
+            int quotaFailures = 0;
+            int otherFailures = 0;
+            List<String> usable = new ArrayList<>();
+            for (String candidate : modelsToTry) {
+                if (isQuotaBlocked(candidate)) {
+                    quotaFailures++;
+                } else {
+                    usable.add(candidate);
+                }
             }
-            if (!modelsToTry.contains("gemini-3.6-flash")) {
-                modelsToTry.add("gemini-3.6-flash");
+            if (usable.isEmpty()) {
+                return new JsonResponse(429, "",
+                        "Gemini free-tier daily quota is used up for every configured model.", null, true);
             }
+            modelsToTry = usable;
 
             HttpResponse<String> response = null;
             String usedModel = null;
@@ -320,6 +360,13 @@ public class GeminiVisionService {
                         break;
                     }
 
+                    if (isDailyQuotaError(response)) {
+                        quotaFailures++;
+                        quotaExhaustedUntil.put(targetModel, Instant.now().plus(QUOTA_RECHECK_INTERVAL));
+                    } else {
+                        otherFailures++;
+                    }
+
                     // On 503 (High demand) or 404/429, instantly failover to next model without wasting time retrying
                     if (modelsToTry.indexOf(targetModel) < modelsToTry.size() - 1) {
                         String fallbackModel = modelsToTry.get(modelsToTry.indexOf(targetModel) + 1);
@@ -327,6 +374,7 @@ public class GeminiVisionService {
                                 targetModel, response.statusCode(), fallbackModel);
                     }
                 } catch (HttpTimeoutException e) {
+                    otherFailures++;
                     if (modelsToTry.indexOf(targetModel) < modelsToTry.size() - 1) {
                         String fallbackModel = modelsToTry.get(modelsToTry.indexOf(targetModel) + 1);
                         log.warn("Gemini model {} timed out after {}s. Instantly failing over to fallback model {}...",
@@ -335,13 +383,15 @@ public class GeminiVisionService {
                         log.warn("Gemini model {} timed out after {}s", targetModel, timeoutSeconds);
                     }
                 } catch (Exception e) {
+                    otherFailures++;
                     log.warn("Gemini model {} request error: {}. Trying fallback...", targetModel, e.getMessage());
                 }
             }
 
             if (response == null || response.statusCode() < 200 || response.statusCode() >= 300) {
                 return new JsonResponse(response != null ? response.statusCode() : 0, "",
-                        response != null ? response.body() : "No response from Gemini API", usedModel);
+                        response != null ? response.body() : "No response from Gemini API", usedModel,
+                        quotaFailures > 0 && otherFailures == 0);
             }
 
             JsonNode root = objectMapper.readTree(response.body());
@@ -410,6 +460,25 @@ public class GeminiVisionService {
                 .timeout(Duration.ofSeconds(timeoutSeconds))
                 .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                 .build();
+    }
+
+    private boolean isQuotaBlocked(String model) {
+        Instant until = quotaExhaustedUntil.get(model);
+        if (until == null) {
+            return false;
+        }
+        if (Instant.now().isBefore(until)) {
+            return true;
+        }
+        quotaExhaustedUntil.remove(model, until);
+        return false;
+    }
+
+    /** A 429 for the per-day quota, which unlike a per-minute 429 does not clear within the next few minutes. */
+    private static boolean isDailyQuotaError(HttpResponse<String> response) {
+        return response.statusCode() == 429
+                && response.body() != null
+                && response.body().toLowerCase(Locale.ROOT).contains("perday");
     }
 
     private boolean hasMediaResolution() {
