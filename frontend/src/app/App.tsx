@@ -7,6 +7,7 @@ import { ReconciliationStats } from '@/features/reconciliation/components/Reconc
 import { ImageScanGrid } from '@/features/reconciliation/components/ImageScanGrid';
 import { ExcelPreviewTable } from '@/features/reconciliation/components/ExcelPreviewTable';
 import { OverdueWaybillAlert } from '@/features/reconciliation/components/OverdueWaybillAlert';
+import { ReceiptDateAlert } from '@/features/reconciliation/components/ReceiptDateAlert';
 import { UnmatchedWaybillTable } from '@/features/reconciliation/components/UnmatchedWaybillTable';
 import { WAYBILL_TABLE_ID } from '@/features/reconciliation/utils/waybillTracking';
 import type { WaybillFilter } from '@/features/reconciliation/utils/waybillTracking';
@@ -150,6 +151,8 @@ export function App() {
                 onView={handleViewOverdue}
               />
             )}
+
+            <ReceiptDateAlert scanResults={results.scanResults} />
 
             {/* Excel Preview Spreadsheet Table */}
             <ExcelPreviewTable

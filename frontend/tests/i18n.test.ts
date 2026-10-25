@@ -36,3 +36,10 @@ test('provides unmatched barcodes translation keys in Khmer', () => {
   assert.equal(translate('unmatched.downloading'), 'កំពុងទាញយក...');
   assert.equal(translate('unmatched.downloadError'), 'ការទាញយកបានបរាជ័យ');
 });
+
+test('provides receipt Create Date alert texts in Khmer', () => {
+  assert.match(translate('receiptDate.alertTitle', { count: 2 }), /^មាន 2 /);
+  assert.match(translate('receiptDate.problem.UNREADABLE', { text: 'Foo 18' }), /Foo 18/);
+  assert.notEqual(translate('receiptDate.problem.NOT_FOUND'), 'receiptDate.problem.NOT_FOUND');
+  assert.notEqual(translate('receiptDate.problem.FUTURE_DATE', { text: 'x' }), 'receiptDate.problem.FUTURE_DATE');
+});

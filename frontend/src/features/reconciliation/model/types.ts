@@ -8,6 +8,10 @@ export interface BarcodeResult {
   errorMessage?: string;
   matched?: boolean;
   previewUrl?: string;
+  // The receipt's CREATED date (yyyy-MM-dd); createDateProblem is set instead when it is missing or invalid
+  createDate?: string;
+  createDateText?: string;
+  createDateProblem?: 'NOT_FOUND' | 'UNREADABLE' | 'FUTURE_DATE';
 }
 
 export interface UnmatchedImageDownload {

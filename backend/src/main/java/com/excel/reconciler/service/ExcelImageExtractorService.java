@@ -20,9 +20,6 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.time.Clock;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.*;
 import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
@@ -32,7 +29,6 @@ public class ExcelImageExtractorService {
     private static final Logger log = LoggerFactory.getLogger(ExcelImageExtractorService.class);
     private final GeminiVisionService geminiVisionService;
     private final ObjectMapper objectMapper;
-    private final Clock clock;
 
     public static final String CREATE_DATE_HEADER = "Create Date";
     // "Create Time", "Created", "Create date (DD/MM/YYYY)" ... whatever the image calls its creation column
@@ -112,49 +108,41 @@ public class ExcelImageExtractorService {
         }
     }
 
-    @Autowired
-    public ExcelImageExtractorService(GeminiVisionService geminiVisionService, ObjectMapper objectMapper,
-                                      @Value("${app.waybill.zone:Asia/Phnom_Penh}") String zone) {
-        this(geminiVisionService, objectMapper, Clock.system(ZoneId.of(zone)));
-    }
-
     public ExcelImageExtractorService(GeminiVisionService geminiVisionService, ObjectMapper objectMapper) {
-        this(geminiVisionService, objectMapper, Clock.system(ZoneId.of("Asia/Phnom_Penh")));
-    }
-
-    ExcelImageExtractorService(GeminiVisionService geminiVisionService, ObjectMapper objectMapper, Clock clock) {
         this.geminiVisionService = geminiVisionService;
         this.objectMapper = objectMapper;
-        this.clock = clock;
     }
 
     record Table(List<String> headers, List<List<String>> rows) {
     }
 
     /**
-     * The creation column is not read from the image: it becomes "Create Date" and every row gets the day
-     * of this upload (in the configured zone). A table without such a column is returned unchanged.
+     * The creation column is not read from the image: it becomes "Create Date" and is left empty. A row only
+     * gets a date later, from the CREATED line of its scanned receipt. A table without such a column is
+     * returned unchanged.
      */
     Table applyCreateDate(List<String> headers, List<List<String>> rows) {
-        int column = -1;
-        for (int i = 0; i < headers.size(); i++) {
-            String key = headers.get(i) == null ? "" : headers.get(i).replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
-            if (CREATE_COLUMN.matcher(key).matches()) {
-                column = i;
-                break;
-            }
-        }
+        int column = findCreateColumn(headers);
         if (column < 0) {
             return new Table(headers, rows);
         }
 
-        String uploadDate = LocalDate.now(clock).toString();
-        final int createColumn = column;
-        List<String> newHeaders = withValue(headers, createColumn, CREATE_DATE_HEADER);
+        List<String> newHeaders = withValue(headers, column, CREATE_DATE_HEADER);
         List<List<String>> newRows = rows.stream()
-                .map(row -> row.stream().allMatch(this::isBlank) ? row : withValue(row, createColumn, uploadDate))
+                .map(row -> withValue(row, column, ""))
                 .toList();
         return new Table(newHeaders, newRows);
+    }
+
+    /** Index of the creation column ("Create Date", "Create Time", ...), or -1 when the table has none. */
+    static int findCreateColumn(List<String> headers) {
+        for (int i = 0; i < headers.size(); i++) {
+            String key = headers.get(i) == null ? "" : headers.get(i).replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+            if (CREATE_COLUMN.matcher(key).matches()) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static List<String> withValue(List<String> values, int index, String value) {

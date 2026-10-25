@@ -82,8 +82,29 @@ public class ReconciliationService {
         // 3. Highlight matches in the uploaded Excel spreadsheet
         ExcelHighlightService.ExcelProcessingResult excelResult;
 
+        // Each matched row takes the CREATED date printed on its receipt image
+        Map<String, String> createDateByCode = new LinkedHashMap<>();
+        for (BarcodeResult res : scanResults) {
+            if (!res.isSuccess() || res.getCreateDate() == null) {
+                continue;
+            }
+            List<String> codes = new ArrayList<>();
+            if (res.getDecodedValue() != null) {
+                codes.add(res.getDecodedValue());
+            }
+            if (res.getAllExtractedValues() != null) {
+                codes.addAll(res.getAllExtractedValues());
+            }
+            for (String code : codes) {
+                if (code != null && !code.isBlank()) {
+                    createDateByCode.putIfAbsent(code.trim(), res.getCreateDate());
+                }
+            }
+        }
+
         try (InputStream is = new ByteArrayInputStream(workbookBytes)) {
-            excelResult = excelHighlightService.highlightMatches(is, allDecodedCodes, columnName, highlightFullRow);
+            excelResult = excelHighlightService.highlightMatches(
+                    is, allDecodedCodes, columnName, highlightFullRow, createDateByCode);
         }
 
         // 4. Align primary decoded value to matched code if present, and calculate unmatched codes

@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -53,7 +54,7 @@ class ReconciliationServiceTest {
                         true, false, null, "Scanned Inventory", List.of("Barcode"),
                         List.of(List.of("SKU-1")), new byte[]{1, 2, 3}));
         when(barcodeDecoder.decodeBatch(any())).thenReturn(Collections.emptyList());
-        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), eq("Barcode"), eq(false)))
+        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), eq("Barcode"), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
                         new byte[]{4, 5}, 1, 0, "Barcode", "Scanned Inventory",
                         List.of("Barcode"), Collections.emptySet(), Collections.emptyList()));
@@ -64,7 +65,7 @@ class ReconciliationServiceTest {
         assertEquals("EXCEL_TABLE_IMAGE", response.getExcelSourceType());
         assertEquals("inventory_highlighted.xlsx", response.getDownloadFileName());
         verify(extractor).processExcelImage(tableImage);
-        verify(highlighter).highlightMatches(any(ByteArrayInputStream.class), anySet(), eq("Barcode"), eq(false));
+        verify(highlighter).highlightMatches(any(ByteArrayInputStream.class), anySet(), eq("Barcode"), eq(false), anyMap());
     }
 
     @Test
@@ -106,7 +107,7 @@ class ReconciliationServiceTest {
                 "2.jpg", "00505718", List.of("J01396943696", "00505718"), "ZXING", true, "CODE_128", null);
         when(barcodeDecoder.decodeBatch(any())).thenReturn(List.of(barcodeResult));
 
-        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false)))
+        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
                         new byte[]{4, 5}, 1, 1, "Waybill Number", "Sheet",
                         List.of("Waybill Number"), java.util.Set.of("J01396943696"), Collections.emptyList()));
@@ -136,7 +137,7 @@ class ReconciliationServiceTest {
                 new BarcodeResult("1.jpg", "J0001", List.of("J0001"), "ZXING", true, "CODE_128", null),
                 new BarcodeResult("2.jpg", "J9999", List.of("J9999"), "ZXING", true, "CODE_128", null),
                 new BarcodeResult("3.jpg", null, Collections.emptyList(), "FAILED", false, null, "no barcode")));
-        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false)))
+        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
                         new byte[]{4, 5}, 1, 1, "Waybill Number", "Sheet",
                         List.of("Waybill Number"), Set.of("J0001"), Collections.emptyList()));
@@ -170,7 +171,7 @@ class ReconciliationServiceTest {
                         true, false, null, "Sheet", List.of("Waybill Number"),
                         List.of(List.of("J0001")), new byte[]{1, 2, 3}));
         when(barcodeDecoder.decodeBatch(any())).thenReturn(Collections.emptyList());
-        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false)))
+        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
                         new byte[]{4, 5}, 1, 0, "Waybill Number", "Sheet",
                         List.of("Waybill Number"), Collections.emptySet(), Collections.emptyList()));

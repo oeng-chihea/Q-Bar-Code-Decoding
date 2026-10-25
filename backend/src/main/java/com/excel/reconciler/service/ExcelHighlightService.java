@@ -107,6 +107,16 @@ public class ExcelHighlightService {
 
     public ExcelProcessingResult highlightMatches(InputStream inputStream, Set<String> decodedCodes,
                                                  String preferredColumnName, boolean highlightFullRow) throws Exception {
+        return highlightMatches(inputStream, decodedCodes, preferredColumnName, highlightFullRow, Map.of());
+    }
+
+    /**
+     * @param createDateByCode receipt CREATED date (yyyy-MM-dd) per decoded code; a matched row's
+     *                         "Create Date" cell takes the date of its receipt. Rows without a receipt date keep theirs.
+     */
+    public ExcelProcessingResult highlightMatches(InputStream inputStream, Set<String> decodedCodes,
+                                                 String preferredColumnName, boolean highlightFullRow,
+                                                 Map<String, String> createDateByCode) throws Exception {
         Workbook workbook = WorkbookFactory.create(inputStream);
         DataFormatter formatter = new DataFormatter();
 
@@ -147,6 +157,8 @@ public class ExcelHighlightService {
             SheetHeaderInfo headerInfo = toHeaderInfo(detection);
             if (headerInfo == null) continue;
 
+            int createColumnIndex = createDateByCode.isEmpty()
+                    ? -1 : ExcelImageExtractorService.findCreateColumn(headerInfo.headers);
             int sheetMatchedCount = 0;
             int sheetDataRows = 0;
             List<ExcelRowPreview> currentSheetPreviews = new ArrayList<>();
@@ -158,6 +170,7 @@ public class ExcelHighlightService {
                 sheetDataRows++;
                 boolean isMatch = false;
                 String matchedValInRow = "";
+                String receiptDate = null;
                 List<Cell> cellsToHighlight = new ArrayList<>();
 
                 // Match only the columns identified as identifiers. This
@@ -176,11 +189,19 @@ public class ExcelHighlightService {
                         matchedValInRow = val;
                         cellsToHighlight.add(cell);
                         allMatchedCodes.add(matchedDecodedOriginal);
+                        if (receiptDate == null) {
+                            receiptDate = createDateByCode.get(matchedDecodedOriginal);
+                        }
                     }
                 }
 
                 if (isMatch) {
                     sheetMatchedCount++;
+
+                    if (receiptDate != null && createColumnIndex >= 0) {
+                        row.getCell(createColumnIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK)
+                                .setCellValue(receiptDate);
+                    }
 
                     if (highlightFullRow) {
                         for (int c = 0; c < headerInfo.headers.size(); c++) {

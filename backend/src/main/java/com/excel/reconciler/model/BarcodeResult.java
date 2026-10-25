@@ -11,6 +11,9 @@ public class BarcodeResult {
     private String barcodeFormat;
     private String errorMessage;
     private Boolean matched;
+    private String createDate; // ISO date (yyyy-MM-dd) read from the receipt's CREATED line
+    private String createDateText; // the CREATED text as read, for messages
+    private String createDateProblem; // NOT_FOUND, UNREADABLE or FUTURE_DATE when createDate is unusable
 
     public BarcodeResult() {
     }
@@ -88,5 +91,29 @@ public class BarcodeResult {
 
     public void setMatched(Boolean matched) {
         this.matched = matched;
+    }
+
+    public String getCreateDate() {
+        return createDate;
+    }
+
+    public void setCreateDate(String createDate) {
+        this.createDate = createDate;
+    }
+
+    public String getCreateDateText() {
+        return createDateText;
+    }
+
+    public void setCreateDateText(String createDateText) {
+        this.createDateText = createDateText;
+    }
+
+    public String getCreateDateProblem() {
+        return createDateProblem;
+    }
+
+    public void setCreateDateProblem(String createDateProblem) {
+        this.createDateProblem = createDateProblem;
     }
 }

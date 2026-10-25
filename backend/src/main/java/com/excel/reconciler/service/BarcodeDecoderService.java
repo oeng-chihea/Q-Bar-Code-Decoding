@@ -4,10 +4,15 @@ import com.excel.reconciler.model.BarcodeResult;
 import com.google.zxing.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -48,13 +53,31 @@ public class BarcodeDecoderService {
     private final ZXingDecoderService zxingDecoderService;
     private final GeminiVisionService geminiVisionService;
     private final Executor imageDecoderExecutor;
+    private final Clock clock;
 
+    @Autowired
     public BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
                                  GeminiVisionService geminiVisionService,
-                                 @Qualifier("imageDecoderExecutor") Executor imageDecoderExecutor) {
+                                 @Qualifier("imageDecoderExecutor") Executor imageDecoderExecutor,
+                                 @Value("${app.waybill.zone:Asia/Phnom_Penh}") String zone) {
+        this(zxingDecoderService, geminiVisionService, imageDecoderExecutor, Clock.system(ZoneId.of(zone)));
+    }
+
+    BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
+                          GeminiVisionService geminiVisionService,
+                          Executor imageDecoderExecutor,
+                          Clock clock) {
         this.zxingDecoderService = zxingDecoderService;
         this.geminiVisionService = geminiVisionService;
         this.imageDecoderExecutor = imageDecoderExecutor;
+        this.clock = clock;
+    }
+
+    BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
+                          GeminiVisionService geminiVisionService,
+                          Executor imageDecoderExecutor) {
+        this(zxingDecoderService, geminiVisionService, imageDecoderExecutor,
+                Clock.system(ZoneId.of("Asia/Phnom_Penh")));
     }
 
     public List<BarcodeResult> decodeBatch(List<MultipartFile> imageFiles) {
@@ -110,7 +133,48 @@ public class BarcodeDecoderService {
                 results.set(resultIndex, buildGeminiResult(localScans.get(resultIndex), values));
             }
         }
+
+        attachCreateDates(localScans, results);
         return results;
+    }
+
+    /**
+     * Reads the receipt's CREATED date for every image whose barcode was decoded, in the same small
+     * concurrent batches as the barcode fallback, and validates it. Images without a barcode are skipped
+     * because they cannot be matched to an Excel row anyway.
+     */
+    private void attachCreateDates(List<LocalScan> localScans, List<BarcodeResult> results) {
+        List<Integer> dateIndexes = new ArrayList<>();
+        for (int i = 0; i < results.size(); i++) {
+            if (results.get(i).isSuccess() && localScans.get(i).imageBytes.length > 0) {
+                dateIndexes.add(i);
+            }
+        }
+
+        LocalDate today = LocalDate.now(clock);
+        for (int start = 0; start < dateIndexes.size(); start += AI_FALLBACK_BATCH_SIZE) {
+            int end = Math.min(start + AI_FALLBACK_BATCH_SIZE, dateIndexes.size());
+            List<Integer> batchIndexes = dateIndexes.subList(start, end);
+            List<GeminiVisionService.BarcodeImage> batchImages = batchIndexes.stream()
+                    .map(index -> {
+                        LocalScan scan = localScans.get(index);
+                        return new GeminiVisionService.BarcodeImage(scan.imageBytes, scan.contentType);
+                    })
+                    .toList();
+            List<String> texts = geminiVisionService.extractReceiptCreatedParallel(batchImages);
+
+            for (int i = 0; i < batchIndexes.size(); i++) {
+                String text = texts != null && i < texts.size() ? texts.get(i) : null;
+                ReceiptDateValidator.Result validated = ReceiptDateValidator.validate(text, today);
+                BarcodeResult result = results.get(batchIndexes.get(i));
+                result.setCreateDateText(validated.rawText());
+                if (validated.isValid()) {
+                    result.setCreateDate(validated.date().toString());
+                } else {
+                    result.setCreateDateProblem(validated.problem().name());
+                }
+            }
+        }
     }
 
     private LocalScan scanWithZxing(MultipartFile file) {
@@ -131,8 +195,8 @@ public class BarcodeDecoderService {
                 }
             }
 
-            byte[] retainedBytes = decodedValues.isEmpty() ? bytes : new byte[0];
-            return new LocalScan(filename, retainedBytes, contentType,
+            // Kept even after a local decode: the receipt's CREATED date is still read from the image
+            return new LocalScan(filename, bytes, contentType,
                     new ArrayList<>(decodedValues), barcodeFormat, null);
         } catch (Exception e) {
             log.error("Error processing file {} with ZXing: {}", filename, e.getMessage());

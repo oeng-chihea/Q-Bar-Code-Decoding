@@ -37,3 +37,14 @@ test('models raw unmatched image download metadata', () => {
   assert.match(types, /downloadUrl: string;/);
   assert.match(types, /export interface UnmatchedImagesResponse/);
 });
+
+test('models the receipt Create Date result and its problems', () => {
+  const typePath = fileURLToPath(new URL(
+    '../src/features/reconciliation/model/types.ts',
+    import.meta.url,
+  ));
+  const types = readFileSync(typePath, 'utf8');
+
+  assert.match(types, /createDate\?: string;/);
+  assert.match(types, /createDateProblem\?: 'NOT_FOUND' \| 'UNREADABLE' \| 'FUTURE_DATE';/);
+});

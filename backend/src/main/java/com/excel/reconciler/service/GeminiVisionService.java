@@ -138,6 +138,69 @@ public class GeminiVisionService {
     }
 
     /**
+     * Reads the date printed next to the "CREATED" label on a receipt, exactly as printed
+     * (for example "Oct 18, 2026, 02:29 PM"). Returns an empty string when none is visible or the call fails.
+     */
+    public String extractReceiptCreatedText(byte[] imageBytes, String mimeType) {
+        if (imageBytes == null || imageBytes.length == 0) {
+            return "";
+        }
+
+        String prompt = """
+                This image is a printed parcel receipt photographed or scanned.
+                Find the line labelled "CREATED" and return the date and time printed next to it,
+                exactly as printed, for example "Oct 18, 2026, 02:29 PM".
+                Ignore any hand-drawn marks or circles around it.
+                If there is no "CREATED" label with a date, return an empty string.
+                Never guess, and never return any other date or number from the receipt.
+                """;
+
+        Map<String, Object> schema = Map.of(
+                "type", "OBJECT",
+                "properties", Map.of("createdText", Map.of("type", "STRING")),
+                "required", List.of("createdText")
+        );
+
+        JsonResponse response = generateJson(imageBytes, mimeType, prompt, schema, null);
+        if (!response.isSuccessful()) {
+            log.warn("Gemini receipt date extraction failed with status {}: {}",
+                    response.statusCode(), response.errorMessage());
+            return "";
+        }
+
+        try {
+            return objectMapper.readTree(response.content()).path("createdText").asText("").trim();
+        } catch (Exception e) {
+            log.debug("Gemini receipt date response parse failed: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * Reads the CREATED date of several receipts concurrently, preserving the input order.
+     */
+    public List<String> extractReceiptCreatedParallel(List<BarcodeImage> images) {
+        if (images == null || images.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<CompletableFuture<String>> futures = images.stream()
+                .map(image -> CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return extractReceiptCreatedText(image.imageBytes(), image.mimeType());
+                    } catch (Exception e) {
+                        log.warn("Gemini receipt date extraction error for image: {}", e.getMessage());
+                        return "";
+                    }
+                }, executor))
+                .toList();
+
+        return futures.stream()
+                .map(CompletableFuture::join)
+                .toList();
+    }
+
+    /**
      * Calls Gemini 2.5 Flash API with multimodal image data and structured JSON schema.
      */
     private static final String KHMER_LOGISTICS_SYSTEM_INSTRUCTION = """

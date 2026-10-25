@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.List;
 
@@ -18,7 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 class BarcodeDecoderServiceTest {
@@ -38,7 +41,7 @@ class BarcodeDecoderServiceTest {
         assertTrue(result.isSuccess());
         assertEquals("01400310465", result.getDecodedValue());
         assertEquals("ZXING", result.getDecoderType());
-        verifyNoInteractions(gemini);
+        verify(gemini, never()).extractBarcodesParallel(any());
     }
 
     @Test
@@ -110,5 +113,49 @@ class BarcodeDecoderServiceTest {
         ArgumentCaptor<List<GeminiVisionService.BarcodeImage>> captor = ArgumentCaptor.forClass(List.class);
         verify(gemini, times(2)).extractBarcodesParallel(captor.capture());
         assertEquals(List.of(4, 1), captor.getAllValues().stream().map(List::size).toList());
+    }
+
+    @Test
+    void readsAndValidatesTheCreatedDateForEveryDecodedReceipt() throws Exception {
+        ZXingDecoderService zxing = mock(ZXingDecoderService.class);
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        Clock clock = Clock.fixed(Instant.parse("2026-10-25T05:00:00Z"), ZoneId.of("Asia/Phnom_Penh"));
+        BarcodeDecoderService service = new BarcodeDecoderService(zxing, gemini, Runnable::run, clock);
+        List<MultipartFile> images = List.of(
+                new MockMultipartFile("images", "ok.png", "image/png", new byte[]{1}),
+                new MockMultipartFile("images", "missing.png", "image/png", new byte[]{2}),
+                new MockMultipartFile("images", "future.png", "image/png", new byte[]{3})
+        );
+
+        when(zxing.decode(any(byte[].class))).thenReturn(Collections.singletonList(
+                new Result("01400310465", null, null, BarcodeFormat.CODE_128)));
+        when(gemini.extractReceiptCreatedParallel(any()))
+                .thenReturn(List.of("Oct 18, 2026, 02:29 PM", "", "Dec 01, 2026, 09:00 AM"));
+
+        List<BarcodeResult> results = service.decodeBatch(images);
+
+        assertEquals("2026-10-18", results.get(0).getCreateDate());
+        assertEquals(null, results.get(0).getCreateDateProblem());
+        assertEquals(null, results.get(1).getCreateDate());
+        assertEquals("NOT_FOUND", results.get(1).getCreateDateProblem());
+        assertEquals("FUTURE_DATE", results.get(2).getCreateDateProblem());
+        assertEquals("Dec 01, 2026, 09:00 AM", results.get(2).getCreateDateText());
+    }
+
+    @Test
+    void doesNotReadDatesFromImagesWithoutABarcode() throws Exception {
+        ZXingDecoderService zxing = mock(ZXingDecoderService.class);
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        BarcodeDecoderService service = new BarcodeDecoderService(zxing, gemini, Runnable::run);
+        MockMultipartFile image = new MockMultipartFile("images", "blank.png", "image/png", new byte[]{1});
+
+        when(zxing.decode(any(byte[].class))).thenReturn(Collections.emptyList());
+        when(gemini.extractBarcodesParallel(any())).thenReturn(List.of(Collections.emptyList()));
+
+        BarcodeResult result = service.decodeBatch(List.of(image)).get(0);
+
+        assertEquals(false, result.isSuccess());
+        assertEquals(null, result.getCreateDateProblem());
+        verify(gemini, never()).extractReceiptCreatedParallel(any());
     }
 }
