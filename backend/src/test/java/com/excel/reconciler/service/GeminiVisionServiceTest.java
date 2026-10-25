@@ -87,4 +87,49 @@ class GeminiVisionServiceTest {
         GeminiVisionService service = new GeminiVisionService(new ObjectMapper(), Runnable::run);
         assertEquals("gemini-flash-lite-latest", service.getConfiguredModel());
     }
+
+    @Test
+    void receiptDateReadIsRetriedAfterAFailedRequestAndSucceeds() {
+        GeminiVisionService service = org.mockito.Mockito.spy(new GeminiVisionService(new ObjectMapper(), Runnable::run));
+        ReflectionTestUtils.setField(service, "dateReadRetryDelayMs", 0L);
+        org.mockito.Mockito.doReturn(
+                        new GeminiVisionService.JsonResponse(429, "", "rate limited"),
+                        new GeminiVisionService.JsonResponse(200, "{\"createdText\":\"Oct 5, 2026, 04:14 PM\"}", null))
+                .when(service).generateJson(org.mockito.ArgumentMatchers.any(byte[].class), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any());
+
+        var reading = service.extractReceiptCreatedText(new byte[]{1}, "image/jpeg");
+
+        assertFalse(reading.failed());
+        assertEquals("Oct 5, 2026, 04:14 PM", reading.text());
+    }
+
+    @Test
+    void receiptDateReadReportsFailureAfterAllAttemptsInsteadOfNoDate() {
+        GeminiVisionService service = org.mockito.Mockito.spy(new GeminiVisionService(new ObjectMapper(), Runnable::run));
+        ReflectionTestUtils.setField(service, "dateReadRetryDelayMs", 0L);
+        org.mockito.Mockito.doReturn(new GeminiVisionService.JsonResponse(503, "", "busy"))
+                .when(service).generateJson(org.mockito.ArgumentMatchers.any(byte[].class), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any());
+
+        var reading = service.extractReceiptCreatedText(new byte[]{1}, "image/jpeg");
+
+        assertTrue(reading.failed());
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.times(3)).generateJson(
+                org.mockito.ArgumentMatchers.any(byte[].class), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void receiptWithoutACreatedDateIsNotAFailure() {
+        GeminiVisionService service = org.mockito.Mockito.spy(new GeminiVisionService(new ObjectMapper(), Runnable::run));
+        org.mockito.Mockito.doReturn(new GeminiVisionService.JsonResponse(200, "{\"createdText\":\"\"}", null))
+                .when(service).generateJson(org.mockito.ArgumentMatchers.any(byte[].class), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any());
+
+        var reading = service.extractReceiptCreatedText(new byte[]{1}, "image/jpeg");
+
+        assertFalse(reading.failed());
+        assertEquals("", reading.text());
+    }
 }

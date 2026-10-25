@@ -46,6 +46,13 @@ public class GeminiVisionService {
     @Value("${gemini.api.media-resolution:}")
     private String mediaResolution = "";
 
+    // How often a failed receipt date read is tried (first try included) and the base wait between tries
+    @Value("${gemini.api.date-read-attempts:3}")
+    private int dateReadAttempts = 3;
+
+    @Value("${gemini.api.date-read-retry-delay-ms:1500}")
+    private long dateReadRetryDelayMs = 1500;
+
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final Executor executor;
@@ -138,12 +145,28 @@ public class GeminiVisionService {
     }
 
     /**
-     * Reads the date printed next to the "CREATED" label on a receipt, exactly as printed
-     * (for example "Oct 18, 2026, 02:29 PM"). Returns an empty string when none is visible or the call fails.
+     * Outcome of reading a receipt's CREATED date. {@code failed} means the request itself did not work
+     * (rate limit, busy server, timeout), so an empty {@code text} is only "no date on the receipt"
+     * when {@code failed} is false.
      */
-    public String extractReceiptCreatedText(byte[] imageBytes, String mimeType) {
+    public record ReceiptDateRead(String text, boolean failed) {
+        public static ReceiptDateRead found(String text) {
+            return new ReceiptDateRead(text == null ? "" : text, false);
+        }
+
+        public static ReceiptDateRead failure() {
+            return new ReceiptDateRead("", true);
+        }
+    }
+
+    /**
+     * Reads the date printed next to the "CREATED" label on a receipt, exactly as printed
+     * (for example "Oct 18, 2026, 02:29 PM"). A failed request is retried with a growing wait, because under
+     * load the free tier answers some requests with 429/503 that succeed a moment later.
+     */
+    public ReceiptDateRead extractReceiptCreatedText(byte[] imageBytes, String mimeType) {
         if (imageBytes == null || imageBytes.length == 0) {
-            return "";
+            return ReceiptDateRead.found("");
         }
 
         String prompt = """
@@ -161,36 +184,56 @@ public class GeminiVisionService {
                 "required", List.of("createdText")
         );
 
-        JsonResponse response = generateJson(imageBytes, mimeType, prompt, schema, null);
-        if (!response.isSuccessful()) {
-            log.warn("Gemini receipt date extraction failed with status {}: {}",
-                    response.statusCode(), response.errorMessage());
-            return "";
-        }
+        int attempts = Math.max(1, dateReadAttempts);
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            JsonResponse response = generateJson(imageBytes, mimeType, prompt, schema, null);
+            if (response.isSuccessful()) {
+                try {
+                    return ReceiptDateRead.found(
+                            objectMapper.readTree(response.content()).path("createdText").asText("").trim());
+                } catch (Exception e) {
+                    log.debug("Gemini receipt date response parse failed: {}", e.getMessage());
+                }
+            } else {
+                log.warn("Gemini receipt date extraction failed with status {} (attempt {}/{}): {}",
+                        response.statusCode(), attempt, attempts, response.errorMessage());
+            }
 
+            if (attempt < attempts && !pause(dateReadRetryDelayMs * attempt)) {
+                break;
+            }
+        }
+        return ReceiptDateRead.failure();
+    }
+
+    private static boolean pause(long millis) {
+        if (millis <= 0) {
+            return true;
+        }
         try {
-            return objectMapper.readTree(response.content()).path("createdText").asText("").trim();
-        } catch (Exception e) {
-            log.debug("Gemini receipt date response parse failed: {}", e.getMessage());
-            return "";
+            Thread.sleep(millis);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 
     /**
      * Reads the CREATED date of several receipts concurrently, preserving the input order.
      */
-    public List<String> extractReceiptCreatedParallel(List<BarcodeImage> images) {
+    public List<ReceiptDateRead> extractReceiptCreatedParallel(List<BarcodeImage> images) {
         if (images == null || images.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<CompletableFuture<String>> futures = images.stream()
+        List<CompletableFuture<ReceiptDateRead>> futures = images.stream()
                 .map(image -> CompletableFuture.supplyAsync(() -> {
                     try {
                         return extractReceiptCreatedText(image.imageBytes(), image.mimeType());
                     } catch (Exception e) {
                         log.warn("Gemini receipt date extraction error for image: {}", e.getMessage());
-                        return "";
+                        return ReceiptDateRead.failure();
                     }
                 }, executor))
                 .toList();

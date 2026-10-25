@@ -111,6 +111,7 @@ public class ReconciliationService {
         Set<String> unmatchedCodes = new LinkedHashSet<>();
         Set<String> matchedImageCodes = new LinkedHashSet<>();
         Set<String> matchedCodesSet = excelResult.getMatchedCodes();
+        Set<String> claimedRowCodes = new HashSet<>();
         int unmatchedImagesCount = 0;
 
         for (BarcodeResult res : scanResults) {
@@ -133,18 +134,28 @@ public class ReconciliationService {
             }
 
             String matchedCandidate = null;
+            String matchedRowCode = null;
             for (String candidate : candidates) {
-                if (isCodeMatched(candidate, matchedCodesSet)) {
+                String rowCode = findMatchedRowCode(candidate, matchedCodesSet);
+                if (rowCode != null) {
                     matchedCandidate = candidate;
+                    matchedRowCode = rowCode;
                     break;
                 }
             }
 
             if (matchedCandidate != null) {
-                // Image matched an Excel row
                 res.setDecodedValue(matchedCandidate);
-                res.setMatched(true);
-                matchedImageCodes.addAll(candidates);
+                if (claimedRowCodes.add(ExcelHighlightService.normalize(matchedRowCode))) {
+                    // First photo of this Excel row
+                    res.setMatched(true);
+                    matchedImageCodes.addAll(candidates);
+                } else {
+                    // The row already has a photo, so this repeat is a leftover image, not a matched one
+                    res.setMatched(false);
+                    res.setDuplicate(true);
+                    unmatchedImagesCount++;
+                }
             } else {
                 // Image did not match any row in Excel
                 res.setMatched(false);
@@ -216,12 +227,13 @@ public class ReconciliationService {
         }
     }
 
-    private boolean isCodeMatched(String decoded, Set<String> matchedCodesSet) {
+    /** The entry of matchedCodesSet that the decoded code stands for, or null when it matches no row. */
+    private String findMatchedRowCode(String decoded, Set<String> matchedCodesSet) {
         if (decoded == null || decoded.isBlank() || matchedCodesSet == null || matchedCodesSet.isEmpty()) {
-            return false;
+            return null;
         }
         if (matchedCodesSet.contains(decoded)) {
-            return true;
+            return decoded;
         }
         String normDecoded = ExcelHighlightService.normalize(decoded);
         for (String m : matchedCodesSet) {
@@ -229,9 +241,9 @@ public class ReconciliationService {
             if (normDecoded.equals(normM)
                     || (normDecoded.length() == 11 && normM.length() == 12 && normM.endsWith(normDecoded))
                     || (normDecoded.length() == 12 && normM.length() == 11 && normDecoded.endsWith(normM))) {
-                return true;
+                return m;
             }
         }
-        return false;
+        return null;
     }
 }

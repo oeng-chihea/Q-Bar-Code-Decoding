@@ -13,12 +13,14 @@ import java.util.regex.Pattern;
  */
 public final class ReceiptDateValidator {
     public enum Problem {
-        /** The receipt has no CREATED date, or the model could not read one. */
+        /** The read worked but no CREATED date is visible on the receipt. */
         NOT_FOUND,
         /** Text was read but it is not a real calendar date. */
         UNREADABLE,
         /** The date is after today, which a receipt cannot be. */
-        FUTURE_DATE
+        FUTURE_DATE,
+        /** The read itself failed (rate limit, busy server, timeout), so nothing is known about the receipt. */
+        READ_FAILED
     }
 
     public record Result(String rawText, LocalDate date, Problem problem) {

@@ -46,5 +46,5 @@ test('models the receipt Create Date result and its problems', () => {
   const types = readFileSync(typePath, 'utf8');
 
   assert.match(types, /createDate\?: string;/);
-  assert.match(types, /createDateProblem\?: 'NOT_FOUND' \| 'UNREADABLE' \| 'FUTURE_DATE';/);
+  assert.match(types, /createDateProblem\?: 'NOT_FOUND' \| 'UNREADABLE' \| 'FUTURE_DATE' \| 'READ_FAILED';/);
 });

@@ -115,12 +115,22 @@ class BarcodeDecoderServiceTest {
         assertEquals(List.of(4, 1), captor.getAllValues().stream().map(List::size).toList());
     }
 
+    private BarcodeDecoderService serviceWithToday(ZXingDecoderService zxing, GeminiVisionService gemini) {
+        Clock clock = Clock.fixed(Instant.parse("2026-10-25T05:00:00Z"), ZoneId.of("Asia/Phnom_Penh"));
+        BarcodeDecoderService service = new BarcodeDecoderService(zxing, gemini, Runnable::run, clock);
+        service.setRetryCooldownMs(0);
+        return service;
+    }
+
+    private static GeminiVisionService.ReceiptDateRead read(String text) {
+        return GeminiVisionService.ReceiptDateRead.found(text);
+    }
+
     @Test
     void readsAndValidatesTheCreatedDateForEveryDecodedReceipt() throws Exception {
         ZXingDecoderService zxing = mock(ZXingDecoderService.class);
         GeminiVisionService gemini = mock(GeminiVisionService.class);
-        Clock clock = Clock.fixed(Instant.parse("2026-10-25T05:00:00Z"), ZoneId.of("Asia/Phnom_Penh"));
-        BarcodeDecoderService service = new BarcodeDecoderService(zxing, gemini, Runnable::run, clock);
+        BarcodeDecoderService service = serviceWithToday(zxing, gemini);
         List<MultipartFile> images = List.of(
                 new MockMultipartFile("images", "ok.png", "image/png", new byte[]{1}),
                 new MockMultipartFile("images", "missing.png", "image/png", new byte[]{2}),
@@ -130,7 +140,7 @@ class BarcodeDecoderServiceTest {
         when(zxing.decode(any(byte[].class))).thenReturn(Collections.singletonList(
                 new Result("01400310465", null, null, BarcodeFormat.CODE_128)));
         when(gemini.extractReceiptCreatedParallel(any()))
-                .thenReturn(List.of("Oct 18, 2026, 02:29 PM", "", "Dec 01, 2026, 09:00 AM"));
+                .thenReturn(List.of(read("Oct 18, 2026, 02:29 PM"), read(""), read("Dec 01, 2026, 09:00 AM")));
 
         List<BarcodeResult> results = service.decodeBatch(images);
 
@@ -140,6 +150,60 @@ class BarcodeDecoderServiceTest {
         assertEquals("NOT_FOUND", results.get(1).getCreateDateProblem());
         assertEquals("FUTURE_DATE", results.get(2).getCreateDateProblem());
         assertEquals("Dec 01, 2026, 09:00 AM", results.get(2).getCreateDateText());
+    }
+
+    @Test
+    void identicalPhotosAreReadOnceAndShareTheResult() throws Exception {
+        ZXingDecoderService zxing = mock(ZXingDecoderService.class);
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        BarcodeDecoderService service = serviceWithToday(zxing, gemini);
+        List<MultipartFile> images = List.of(
+                new MockMultipartFile("images", "a.png", "image/png", new byte[]{1, 1}),
+                new MockMultipartFile("images", "b.png", "image/png", new byte[]{2, 2}),
+                new MockMultipartFile("images", "a-copy.png", "image/png", new byte[]{1, 1})
+        );
+
+        when(zxing.decode(any(byte[].class))).thenReturn(Collections.singletonList(
+                new Result("01400310465", null, null, BarcodeFormat.CODE_128)));
+        when(gemini.extractReceiptCreatedParallel(any()))
+                .thenReturn(List.of(read("Oct 5, 2026, 04:14 PM"), read("Oct 6, 2026, 10:07 AM")));
+
+        List<BarcodeResult> results = service.decodeBatch(images);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<GeminiVisionService.BarcodeImage>> captor = ArgumentCaptor.forClass(List.class);
+        verify(gemini).extractReceiptCreatedParallel(captor.capture());
+        assertEquals(2, captor.getValue().size());
+        assertEquals("2026-10-05", results.get(0).getCreateDate());
+        assertEquals("2026-10-06", results.get(1).getCreateDate());
+        assertEquals("2026-10-05", results.get(2).getCreateDate());
+    }
+
+    @Test
+    void failedReadsGetASecondPassAndOnlyTheStillFailingOnesAreReported() throws Exception {
+        ZXingDecoderService zxing = mock(ZXingDecoderService.class);
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        BarcodeDecoderService service = serviceWithToday(zxing, gemini);
+        List<MultipartFile> images = List.of(
+                new MockMultipartFile("images", "recovers.png", "image/png", new byte[]{1}),
+                new MockMultipartFile("images", "stays-failed.png", "image/png", new byte[]{2}),
+                new MockMultipartFile("images", "fine.png", "image/png", new byte[]{3})
+        );
+
+        when(zxing.decode(any(byte[].class))).thenReturn(Collections.singletonList(
+                new Result("01400310465", null, null, BarcodeFormat.CODE_128)));
+        when(gemini.extractReceiptCreatedParallel(any()))
+                .thenReturn(List.of(GeminiVisionService.ReceiptDateRead.failure(),
+                        GeminiVisionService.ReceiptDateRead.failure(), read("Oct 8, 2026, 01:00 PM")))
+                .thenReturn(List.of(read("Oct 5, 2026, 12:25 PM"), GeminiVisionService.ReceiptDateRead.failure()));
+
+        List<BarcodeResult> results = service.decodeBatch(images);
+
+        verify(gemini, times(2)).extractReceiptCreatedParallel(any());
+        assertEquals("2026-10-05", results.get(0).getCreateDate());
+        assertEquals("READ_FAILED", results.get(1).getCreateDateProblem());
+        assertEquals(null, results.get(1).getCreateDate());
+        assertEquals("2026-10-08", results.get(2).getCreateDate());
     }
 
     @Test

@@ -7,11 +7,13 @@ export interface BarcodeResult {
   barcodeFormat?: string;
   errorMessage?: string;
   matched?: boolean;
+  // Another photo already matched the same Excel row, so this one is a leftover (not counted as matched)
+  duplicate?: boolean;
   previewUrl?: string;
   // The receipt's CREATED date (yyyy-MM-dd); createDateProblem is set instead when it is missing or invalid
   createDate?: string;
   createDateText?: string;
-  createDateProblem?: 'NOT_FOUND' | 'UNREADABLE' | 'FUTURE_DATE';
+  createDateProblem?: 'NOT_FOUND' | 'UNREADABLE' | 'FUTURE_DATE' | 'READ_FAILED';
 }
 
 export interface UnmatchedImageDownload {

@@ -184,4 +184,44 @@ class ReconciliationServiceTest {
         assertArrayEquals(new byte[]{4, 5}, Base64.getDecoder().decode(response.getHighlightedExcelBase64()));
         assertFalse(response.isTrackingAvailable());
     }
+
+    @Test
+    void aRepeatPhotoOfAMatchedRowCountsAsALeftoverImageNotAMatch() throws Exception {
+        BarcodeDecoderService barcodeDecoder = mock(BarcodeDecoderService.class);
+        ExcelHighlightService highlighter = mock(ExcelHighlightService.class);
+        ExcelImageExtractorService extractor = mock(ExcelImageExtractorService.class);
+        MockMultipartFile tableImage = new MockMultipartFile("excelFile", "inventory.png", "image/png", new byte[]{1});
+        MockMultipartFile photo = new MockMultipartFile("images", "a.jpg", "image/jpeg", new byte[]{2});
+
+        when(extractor.processExcelImage(tableImage)).thenReturn(
+                new ExcelImageExtractorService.ExtractedExcelData(
+                        true, false, null, "Sheet", List.of("Waybill Number"),
+                        List.of(List.of("J0001"), List.of("J0002")), new byte[]{1, 2, 3}));
+        when(barcodeDecoder.decodeBatch(any())).thenReturn(List.of(
+                new com.excel.reconciler.model.BarcodeResult("1.jpg", "J0001", List.of("J0001"), "ZXING", true, "CODE_128", null),
+                new com.excel.reconciler.model.BarcodeResult("2.jpg", "J0001", List.of("J0001"), "ZXING", true, "CODE_128", null),
+                new com.excel.reconciler.model.BarcodeResult("3.jpg", "J0002", List.of("J0002"), "ZXING", true, "CODE_128", null),
+                new com.excel.reconciler.model.BarcodeResult("4.jpg", "J9999", List.of("J9999"), "ZXING", true, "CODE_128", null)));
+        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
+                .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
+                        new byte[]{4, 5}, 2, 2, "Waybill Number", "Sheet",
+                        List.of("Waybill Number"), java.util.Set.of("J0001", "J0002"), Collections.emptyList()));
+
+        ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
+        var response = service.reconcile(tableImage, List.of(photo, photo, photo, photo), "Waybill Number", false, "rec-1");
+
+        var scans = response.getScanResults();
+        assertTrue(scans.get(0).isMatched());
+        assertFalse(scans.get(0).isDuplicate());
+        assertFalse(scans.get(1).isMatched());
+        assertTrue(scans.get(1).isDuplicate());
+        assertTrue(scans.get(2).isMatched());
+        assertFalse(scans.get(3).isMatched());
+        assertFalse(scans.get(3).isDuplicate());
+        // 2 rows matched + 2 leftover images (the repeat and the unknown waybill) = the 4 uploaded photos
+        assertEquals(2, response.getMatchedRowsCount());
+        assertEquals(2, response.getUnmatchedImagesCount());
+        // The repeat's waybill is matched, so only the unknown one is tracked as unmatched
+        assertEquals(java.util.Set.of("J9999"), response.getUnmatchedCodes());
+    }
 }

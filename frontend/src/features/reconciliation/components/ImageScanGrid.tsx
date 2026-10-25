@@ -151,7 +151,9 @@ export const ImageScanGrid = ({
   // "Download all" still covers every photo; the cards below show each waybill once.
   const unmatchedResults = scanResults.filter(isUnmatched);
   const unmatchedGroups = groupUnmatchedByBarcode(scanResults, isUnmatched, getDisplayBarcode);
-  const uniqueWaybillCount = unmatchedGroups.filter((group) => group.barcode).length;
+  const uniqueWaybillCount = unmatchedGroups.filter(
+    (group) => group.barcode && !group.photos.every(({ item }) => item.duplicate),
+  ).length;
 
   const filteredGroups = unmatchedGroups.filter(({ photos }) => {
     const q = searchQuery.trim().toLowerCase();
@@ -425,7 +427,7 @@ export const ImageScanGrid = ({
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-[#461B21] text-[#FB7185] border border-[#5C1D24]">
                         <AlertCircle className="w-2.5 h-2.5" />
-                        {t('unmatched.unmatchedTag')}
+                        {item.duplicate ? t('unmatched.duplicateTag') : t('unmatched.unmatchedTag')}
                       </span>
                     )}
                   </div>

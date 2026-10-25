@@ -43,3 +43,10 @@ test('provides receipt Create Date alert texts in Khmer', () => {
   assert.notEqual(translate('receiptDate.problem.NOT_FOUND'), 'receiptDate.problem.NOT_FOUND');
   assert.notEqual(translate('receiptDate.problem.FUTURE_DATE', { text: 'x' }), 'receiptDate.problem.FUTURE_DATE');
 });
+
+test('tells a failed date read apart from a receipt without a date', () => {
+  assert.notEqual(
+    translate('receiptDate.problem.READ_FAILED'),
+    translate('receiptDate.problem.NOT_FOUND'),
+  );
+});

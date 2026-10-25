@@ -11,6 +11,7 @@ public class BarcodeResult {
     private String barcodeFormat;
     private String errorMessage;
     private Boolean matched;
+    private boolean duplicate; // another photo already matched the same Excel row
     private String createDate; // ISO date (yyyy-MM-dd) read from the receipt's CREATED line
     private String createDateText; // the CREATED text as read, for messages
     private String createDateProblem; // NOT_FOUND, UNREADABLE or FUTURE_DATE when createDate is unusable
@@ -91,6 +92,14 @@ public class BarcodeResult {
 
     public void setMatched(Boolean matched) {
         this.matched = matched;
+    }
+
+    public boolean isDuplicate() {
+        return duplicate;
+    }
+
+    public void setDuplicate(boolean duplicate) {
+        this.duplicate = duplicate;
     }
 
     public String getCreateDate() {

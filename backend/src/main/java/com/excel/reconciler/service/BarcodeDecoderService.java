@@ -10,13 +10,18 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -54,6 +59,8 @@ public class BarcodeDecoderService {
     private final GeminiVisionService geminiVisionService;
     private final Executor imageDecoderExecutor;
     private final Clock clock;
+    // Wait before the second pass over date reads that failed; tests set it to 0
+    private long retryCooldownMs = 4000;
 
     @Autowired
     public BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
@@ -73,11 +80,16 @@ public class BarcodeDecoderService {
         this.clock = clock;
     }
 
+    void setRetryCooldownMs(long retryCooldownMs) {
+        this.retryCooldownMs = retryCooldownMs;
+    }
+
     BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
                           GeminiVisionService geminiVisionService,
                           Executor imageDecoderExecutor) {
         this(zxingDecoderService, geminiVisionService, imageDecoderExecutor,
                 Clock.system(ZoneId.of("Asia/Phnom_Penh")));
+        this.retryCooldownMs = 0;
     }
 
     public List<BarcodeResult> decodeBatch(List<MultipartFile> imageFiles) {
@@ -139,41 +151,102 @@ public class BarcodeDecoderService {
     }
 
     /**
-     * Reads the receipt's CREATED date for every image whose barcode was decoded, in the same small
-     * concurrent batches as the barcode fallback, and validates it. Images without a barcode are skipped
-     * because they cannot be matched to an Excel row anyway.
+     * Reads the receipt's CREATED date for every image whose barcode was decoded, and validates it.
+     * Identical photos are read once and share the result. Reads that fail (rate limit, busy server)
+     * get a second pass after a cool-down, and are reported as READ_FAILED rather than "no date on the
+     * receipt". Images without a barcode are skipped because they cannot be matched to an Excel row.
      */
     private void attachCreateDates(List<LocalScan> localScans, List<BarcodeResult> results) {
-        List<Integer> dateIndexes = new ArrayList<>();
+        Map<String, List<Integer>> indexesByContent = new LinkedHashMap<>();
         for (int i = 0; i < results.size(); i++) {
             if (results.get(i).isSuccess() && localScans.get(i).imageBytes.length > 0) {
-                dateIndexes.add(i);
+                indexesByContent.computeIfAbsent(contentHash(localScans.get(i).imageBytes), k -> new ArrayList<>())
+                        .add(i);
             }
+        }
+        if (indexesByContent.isEmpty()) {
+            return;
+        }
+
+        Map<String, GeminiVisionService.ReceiptDateRead> readings = readDates(
+                localScans, indexesByContent, new ArrayList<>(indexesByContent.keySet()));
+
+        List<String> failed = readings.entrySet().stream()
+                .filter(entry -> entry.getValue().failed())
+                .map(Map.Entry::getKey)
+                .toList();
+        if (!failed.isEmpty()) {
+            log.warn("Receipt date read failed for {} image(s); retrying them after a short pause", failed.size());
+            pauseBeforeRetry();
+            readings.putAll(readDates(localScans, indexesByContent, failed));
         }
 
         LocalDate today = LocalDate.now(clock);
-        for (int start = 0; start < dateIndexes.size(); start += AI_FALLBACK_BATCH_SIZE) {
-            int end = Math.min(start + AI_FALLBACK_BATCH_SIZE, dateIndexes.size());
-            List<Integer> batchIndexes = dateIndexes.subList(start, end);
-            List<GeminiVisionService.BarcodeImage> batchImages = batchIndexes.stream()
-                    .map(index -> {
-                        LocalScan scan = localScans.get(index);
+        indexesByContent.forEach((hash, indexes) -> {
+            GeminiVisionService.ReceiptDateRead reading = readings.get(hash);
+            for (int index : indexes) {
+                applyReading(results.get(index), reading, today);
+            }
+        });
+    }
+
+    /** Reads one photo per content hash, in the same small concurrent batches as the barcode fallback. */
+    private Map<String, GeminiVisionService.ReceiptDateRead> readDates(List<LocalScan> localScans,
+                                                                       Map<String, List<Integer>> indexesByContent,
+                                                                       List<String> hashes) {
+        Map<String, GeminiVisionService.ReceiptDateRead> readings = new LinkedHashMap<>();
+        for (int start = 0; start < hashes.size(); start += AI_FALLBACK_BATCH_SIZE) {
+            List<String> batch = hashes.subList(start, Math.min(start + AI_FALLBACK_BATCH_SIZE, hashes.size()));
+            List<GeminiVisionService.BarcodeImage> images = batch.stream()
+                    .map(hash -> {
+                        LocalScan scan = localScans.get(indexesByContent.get(hash).get(0));
                         return new GeminiVisionService.BarcodeImage(scan.imageBytes, scan.contentType);
                     })
                     .toList();
-            List<String> texts = geminiVisionService.extractReceiptCreatedParallel(batchImages);
+            List<GeminiVisionService.ReceiptDateRead> batchReadings =
+                    geminiVisionService.extractReceiptCreatedParallel(images);
 
-            for (int i = 0; i < batchIndexes.size(); i++) {
-                String text = texts != null && i < texts.size() ? texts.get(i) : null;
-                ReceiptDateValidator.Result validated = ReceiptDateValidator.validate(text, today);
-                BarcodeResult result = results.get(batchIndexes.get(i));
-                result.setCreateDateText(validated.rawText());
-                if (validated.isValid()) {
-                    result.setCreateDate(validated.date().toString());
-                } else {
-                    result.setCreateDateProblem(validated.problem().name());
-                }
+            for (int i = 0; i < batch.size(); i++) {
+                GeminiVisionService.ReceiptDateRead reading =
+                        batchReadings != null && i < batchReadings.size() && batchReadings.get(i) != null
+                                ? batchReadings.get(i)
+                                : GeminiVisionService.ReceiptDateRead.failure();
+                readings.put(batch.get(i), reading);
             }
+        }
+        return readings;
+    }
+
+    private void applyReading(BarcodeResult result, GeminiVisionService.ReceiptDateRead reading, LocalDate today) {
+        if (reading.failed()) {
+            result.setCreateDateProblem(ReceiptDateValidator.Problem.READ_FAILED.name());
+            return;
+        }
+        ReceiptDateValidator.Result validated = ReceiptDateValidator.validate(reading.text(), today);
+        result.setCreateDateText(validated.rawText());
+        if (validated.isValid()) {
+            result.setCreateDate(validated.date().toString());
+        } else {
+            result.setCreateDateProblem(validated.problem().name());
+        }
+    }
+
+    private void pauseBeforeRetry() {
+        if (retryCooldownMs <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(retryCooldownMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static String contentHash(byte[] bytes) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
         }
     }
 
