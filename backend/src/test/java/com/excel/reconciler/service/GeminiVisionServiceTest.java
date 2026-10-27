@@ -114,6 +114,18 @@ class GeminiVisionServiceTest {
     }
 
     @Test
+    void receiptDateReadAlsoReturnsTheCustomerName() {
+        GeminiVisionService service = spyAnswering(new GeminiVisionService.JsonResponse(200,
+                "{\"receipts\":[{\"receipt\":1,\"createdText\":\"Oct 7, 2026, 11:25 AM\","
+                        + "\"waybillNo\":\"J01416824762\",\"customerName\":\" Nhim Sarey \"}]}", null));
+
+        var reading = service.extractReceiptCreatedText(new byte[]{1}, "image/jpeg");
+
+        assertEquals("Nhim Sarey", reading.customerName());
+        assertEquals("J01416824762", reading.waybillNo());
+    }
+
+    @Test
     void receiptDateReadIsTriedOnceWithTheDateTimeout() {
         GeminiVisionService service = spyAnswering(new GeminiVisionService.JsonResponse(503, "", "busy"));
 

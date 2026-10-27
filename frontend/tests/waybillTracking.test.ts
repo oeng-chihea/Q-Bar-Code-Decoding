@@ -36,7 +36,7 @@ test('finds a tracked waybill for a scanned code ignoring case and spaces', () =
 test('translates the waybill tracking labels in Khmer with the configured day limit', () => {
   assert.equal(
     translate('waybill.alertTitle', { count: 3, days: 6 }),
-    'មាន 3 លេខវ៉ាយប៊ីលមិនត្រូវគ្នាលើស 6 ថ្ងៃ',
+    'មាន 3 លេខសៀរៀលមិនត្រូវគ្នាលើស 6 ថ្ងៃ',
   );
   assert.equal(translate('waybill.statusOnTrack', { days: 2 }), 'នៅសល់ 2 ថ្ងៃ');
   assert.equal(translate('waybill.statusOverdue', { limit: 6, days: 7 }), 'លើស 6 ថ្ងៃ (+7)');

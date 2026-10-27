@@ -325,13 +325,13 @@ class BarcodeDecoderServiceTest {
     void savedDatesAreReusedAndOnlyNewlyReadDatesAreSaved() throws Exception {
         ZXingDecoderService zxing = mock(ZXingDecoderService.class);
         GeminiVisionService gemini = mock(GeminiVisionService.class);
-        ReceiptDateStore store = mock(ReceiptDateStore.class);
+        ReceiptDetailStore store = mock(ReceiptDetailStore.class);
         BarcodeDecoderService service = new BarcodeDecoderService(
                 zxing, gemini, Runnable::run, TODAY, Optional.of(store), Duration.ofSeconds(60));
 
         decodeWaybillFromFirstByte(zxing);
-        when(store.findDates(any())).thenReturn(Map.of(
-                waybill(1), new ReceiptDateStore.SavedDate(LocalDate.of(2026, 10, 3), "Oct 3, 2026, 09:15 AM")));
+        when(store.findReceipts(any())).thenReturn(Map.of(
+                waybill(1), new ReceiptDetailStore.SavedReceipt(LocalDate.of(2026, 10, 3), "Oct 3, 2026, 09:15 AM", "")));
         answerDates(gemini, b -> read("Oct 9, 2026, 11:00 AM"));
 
         List<BarcodeResult> results = service.decodeBatch(photos(1, 2));
@@ -340,21 +340,21 @@ class BarcodeDecoderServiceTest {
         assertEquals("2026-10-03", results.get(0).getCreateDate());
         assertEquals("Oct 3, 2026, 09:15 AM", results.get(0).getCreateDateText());
         assertEquals("2026-10-09", results.get(1).getCreateDate());
-        verify(store).saveDates(Map.of(
-                waybill(2), new ReceiptDateStore.SavedDate(LocalDate.of(2026, 10, 9), "Oct 9, 2026, 11:00 AM")));
+        verify(store).saveReceipts(Map.of(
+                waybill(2), new ReceiptDetailStore.SavedReceipt(LocalDate.of(2026, 10, 9), "Oct 9, 2026, 11:00 AM", "")));
     }
 
     @Test
     void aBrokenDatabaseOnlyMeansDatesAreReadAgain() throws Exception {
         ZXingDecoderService zxing = mock(ZXingDecoderService.class);
         GeminiVisionService gemini = mock(GeminiVisionService.class);
-        ReceiptDateStore store = mock(ReceiptDateStore.class);
+        ReceiptDetailStore store = mock(ReceiptDetailStore.class);
         BarcodeDecoderService service = new BarcodeDecoderService(
                 zxing, gemini, Runnable::run, TODAY, Optional.of(store), Duration.ofSeconds(60));
 
         decodeWaybillFromFirstByte(zxing);
-        when(store.findDates(any())).thenThrow(new IllegalStateException("connection refused"));
-        doThrow(new IllegalStateException("connection refused")).when(store).saveDates(any());
+        when(store.findReceipts(any())).thenThrow(new IllegalStateException("connection refused"));
+        doThrow(new IllegalStateException("connection refused")).when(store).saveReceipts(any());
         answerDates(gemini, b -> read("Oct 9, 2026, 11:00 AM"));
 
         BarcodeResult result = service.decodeBatch(photos(1)).get(0);
@@ -366,7 +366,7 @@ class BarcodeDecoderServiceTest {
     void aDateIsNotTrustedWhenTheReceiptPrintsADifferentWaybill() throws Exception {
         ZXingDecoderService zxing = mock(ZXingDecoderService.class);
         GeminiVisionService gemini = mock(GeminiVisionService.class);
-        ReceiptDateStore store = mock(ReceiptDateStore.class);
+        ReceiptDetailStore store = mock(ReceiptDetailStore.class);
         BarcodeDecoderService service = new BarcodeDecoderService(
                 zxing, gemini, Runnable::run, TODAY, Optional.of(store), Duration.ofSeconds(60));
 
@@ -385,8 +385,8 @@ class BarcodeDecoderServiceTest {
         assertEquals("2026-10-07", results.get(2).getCreateDate());
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, ReceiptDateStore.SavedDate>> saved = ArgumentCaptor.forClass(Map.class);
-        verify(store).saveDates(saved.capture());
+        ArgumentCaptor<Map<String, ReceiptDetailStore.SavedReceipt>> saved = ArgumentCaptor.forClass(Map.class);
+        verify(store).saveReceipts(saved.capture());
         assertEquals(Set.of(waybill(2), waybill(3)), saved.getValue().keySet());
     }
 
@@ -394,7 +394,7 @@ class BarcodeDecoderServiceTest {
     void aMisreadBarcodeIsCorrectedWhenScanningAgainFindsThePrintedWaybill() throws Exception {
         ZXingDecoderService zxing = mock(ZXingDecoderService.class);
         GeminiVisionService gemini = mock(GeminiVisionService.class);
-        ReceiptDateStore store = mock(ReceiptDateStore.class);
+        ReceiptDetailStore store = mock(ReceiptDetailStore.class);
         BarcodeDecoderService service = new BarcodeDecoderService(
                 zxing, gemini, Runnable::run, TODAY, Optional.of(store), Duration.ofSeconds(60));
 
@@ -414,8 +414,8 @@ class BarcodeDecoderServiceTest {
             assertEquals(null, result.getPrintedWaybill());
         }
         verify(zxing, times(1)).decodeEveryCandidate(any(byte[].class));
-        verify(store).saveDates(Map.of(
-                "J01421594677", new ReceiptDateStore.SavedDate(LocalDate.of(2026, 10, 6), "Oct 6, 2026, 10:07 AM")));
+        verify(store).saveReceipts(Map.of(
+                "J01421594677", new ReceiptDetailStore.SavedReceipt(LocalDate.of(2026, 10, 6), "Oct 6, 2026, 10:07 AM", "")));
     }
 
     @Test
@@ -436,6 +436,71 @@ class BarcodeDecoderServiceTest {
         assertEquals("WAYBILL_MISMATCH", result.getCreateDateProblem());
         assertEquals("J01421594677", result.getPrintedWaybill());
         assertEquals("2026-10-06", result.getPrintedWaybillCreateDate());
+    }
+
+    @Test
+    void theCustomerNameIsReadWithTheDateAndSavedWithIt() throws Exception {
+        ZXingDecoderService zxing = mock(ZXingDecoderService.class);
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ReceiptDetailStore store = mock(ReceiptDetailStore.class);
+        BarcodeDecoderService service = new BarcodeDecoderService(
+                zxing, gemini, Runnable::run, TODAY, Optional.of(store), Duration.ofSeconds(60));
+
+        decodeWaybillFromFirstByte(zxing);
+        answerDates(gemini, b -> Map.of(
+                1, GeminiVisionService.ReceiptDateRead.found("Oct 7, 2026, 11:25 AM", waybill(1), " Nhim Sarey "),
+                2, GeminiVisionService.ReceiptDateRead.found("", waybill(2), "Sok Dara"),
+                3, GeminiVisionService.ReceiptDateRead.found("", waybill(3), "")).get(b));
+
+        List<BarcodeResult> results = service.decodeBatch(photos(1, 1, 2, 3));
+
+        assertEquals("Nhim Sarey", results.get(0).getCustomerName());
+        assertEquals("Nhim Sarey", results.get(1).getCustomerName());
+        assertEquals("Sok Dara", results.get(2).getCustomerName());
+        assertEquals("NOT_FOUND", results.get(2).getCreateDateProblem());
+        assertEquals(null, results.get(3).getCustomerName());
+        // A name alone is worth saving; a receipt with neither a date nor a name is not
+        verify(store).saveReceipts(Map.of(
+                waybill(1), new ReceiptDetailStore.SavedReceipt(LocalDate.of(2026, 10, 7), "Oct 7, 2026, 11:25 AM", "Nhim Sarey"),
+                waybill(2), new ReceiptDetailStore.SavedReceipt(null, "", "Sok Dara")));
+    }
+
+    @Test
+    void aSavedReceiptWithoutACustomerNameIsReadAgainButACompleteOneIsReused() throws Exception {
+        ZXingDecoderService zxing = mock(ZXingDecoderService.class);
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        ReceiptDetailStore store = mock(ReceiptDetailStore.class);
+        BarcodeDecoderService service = new BarcodeDecoderService(
+                zxing, gemini, Runnable::run, TODAY, Optional.of(store), Duration.ofSeconds(60));
+
+        decodeWaybillFromFirstByte(zxing);
+        when(store.findReceipts(any())).thenReturn(Map.of(
+                waybill(1), new ReceiptDetailStore.SavedReceipt(LocalDate.of(2026, 10, 3), "Oct 3, 2026, 09:15 AM", "Nhim Sarey"),
+                waybill(2), new ReceiptDetailStore.SavedReceipt(LocalDate.of(2026, 10, 4), "Oct 4, 2026, 10:00 AM", null)));
+        answerDates(gemini, b -> GeminiVisionService.ReceiptDateRead.found("Oct 4, 2026, 10:00 AM", waybill(b), "Sok Dara"));
+
+        List<BarcodeResult> results = service.decodeBatch(photos(1, 2));
+
+        assertEquals(List.of(1), requestSizes(gemini, 1));
+        assertEquals("Nhim Sarey", results.get(0).getCustomerName());
+        assertEquals("2026-10-03", results.get(0).getCreateDate());
+        assertEquals("Sok Dara", results.get(1).getCustomerName());
+        assertEquals("2026-10-04", results.get(1).getCreateDate());
+    }
+
+    @Test
+    void theCustomerNameOfAReceiptPrintingADifferentWaybillIsNotShown() throws Exception {
+        ZXingDecoderService zxing = mock(ZXingDecoderService.class);
+        GeminiVisionService gemini = mock(GeminiVisionService.class);
+        BarcodeDecoderService service = serviceWithToday(zxing, gemini);
+
+        decodeWaybillFromFirstByte(zxing);
+        answerDates(gemini, b -> GeminiVisionService.ReceiptDateRead.found("Oct 7, 2026, 11:25 AM", "J09999999999", "Nhim Sarey"));
+
+        BarcodeResult result = service.decodeBatch(photos(1)).get(0);
+
+        assertEquals(null, result.getCustomerName());
+        assertEquals("Nhim Sarey", result.getPrintedWaybillCustomerName());
     }
 
     @Test

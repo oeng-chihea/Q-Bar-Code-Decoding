@@ -19,10 +19,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
 
-/** Adds an "Unmatched waybills" sheet to the highlighted workbook; the existing sheets are left untouched. */
+/** Adds an "Unmatched serial numbers" sheet to the highlighted workbook; the existing sheets are left untouched. */
 @Service
 public class UnmatchedWaybillSheetWriter {
-    static final String SHEET_NAME = "Unmatched waybills";
+    static final String SHEET_NAME = "Unmatched serial numbers";
     private static final int COLUMN_WIDTH = 18 * 256;
 
     public byte[] append(byte[] workbookBytes, List<UnmatchedWaybill> waybills, int overdueAfterDays)
@@ -37,7 +37,8 @@ public class UnmatchedWaybillSheetWriter {
             CellStyle headerStyle = headerStyle(workbook);
             CellStyle overdueStyle = overdueStyle(workbook);
 
-            String[] headers = {"Waybill Number", "Start date", "Due date", "Days open", "Over " + overdueAfterDays + " days"};
+            String[] headers = {"Serial Number", "Customer name", "Start date", "Due date", "Days open",
+                    "Over " + overdueAfterDays + " days"};
             Row headerRow = sheet.createRow(0);
             for (int column = 0; column < headers.length; column++) {
                 Cell headerCell = headerRow.createCell(column);
@@ -50,10 +51,11 @@ public class UnmatchedWaybillSheetWriter {
                 UnmatchedWaybill waybill = waybills.get(index);
                 Row row = sheet.createRow(index + 1);
                 row.createCell(0).setCellValue(waybill.waybillNo());
-                row.createCell(1).setCellValue(waybill.startDate().toString());
-                row.createCell(2).setCellValue(waybill.dueDate().toString());
-                row.createCell(3).setCellValue(waybill.daysOpen());
-                row.createCell(4).setCellValue(overdueLabel(waybill));
+                row.createCell(1).setCellValue(waybill.customerName() == null ? "" : waybill.customerName());
+                row.createCell(2).setCellValue(waybill.startDate().toString());
+                row.createCell(3).setCellValue(waybill.dueDate().toString());
+                row.createCell(4).setCellValue(waybill.daysOpen());
+                row.createCell(5).setCellValue(overdueLabel(waybill));
                 if (waybill.status() == WaybillStatus.OVERDUE) {
                     for (int column = 0; column < headers.length; column++) {
                         row.getCell(column).setCellStyle(overdueStyle);

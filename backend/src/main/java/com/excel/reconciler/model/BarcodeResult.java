@@ -17,12 +17,15 @@ public class BarcodeResult {
     private String createDate; // ISO date (yyyy-MM-dd) read from the receipt's CREATED line
     private String createDateText; // the CREATED text as read, for messages
     private String createDateProblem; // NOT_FOUND, UNREADABLE or FUTURE_DATE when createDate is unusable
+    private String customerName; // the customer's name printed on the receipt
     private String printedWaybill; // the waybill printed on the receipt, set only when it differs from the barcode
     // The receipt's date checked as if the printed waybill were right, used if the Excel table backs it
     @JsonIgnore
     private String printedWaybillCreateDate;
     @JsonIgnore
     private String printedWaybillCreateDateProblem;
+    @JsonIgnore
+    private String printedWaybillCustomerName;
 
     public BarcodeResult() {
     }
@@ -134,6 +137,14 @@ public class BarcodeResult {
         this.createDateProblem = createDateProblem;
     }
 
+    public String getCustomerName() {
+        return customerName;
+    }
+
+    public void setCustomerName(String customerName) {
+        this.customerName = customerName;
+    }
+
     public String getPrintedWaybill() {
         return printedWaybill;
     }
@@ -156,5 +167,13 @@ public class BarcodeResult {
 
     public void setPrintedWaybillCreateDateProblem(String printedWaybillCreateDateProblem) {
         this.printedWaybillCreateDateProblem = printedWaybillCreateDateProblem;
+    }
+
+    public String getPrintedWaybillCustomerName() {
+        return printedWaybillCustomerName;
+    }
+
+    public void setPrintedWaybillCustomerName(String printedWaybillCustomerName) {
+        this.printedWaybillCustomerName = printedWaybillCustomerName;
     }
 }

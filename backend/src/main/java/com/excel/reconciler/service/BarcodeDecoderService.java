@@ -67,7 +67,7 @@ public class BarcodeDecoderService {
     private final GeminiVisionService geminiVisionService;
     private final Executor imageDecoderExecutor;
     private final Clock clock;
-    private final Optional<ReceiptDateStore> dateStore;
+    private final Optional<ReceiptDetailStore> receiptStore;
     private final Duration dateReadBudget;
     private final int dateReadBatchSize;
 
@@ -75,26 +75,26 @@ public class BarcodeDecoderService {
     public BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
                                  GeminiVisionService geminiVisionService,
                                  @Qualifier("imageDecoderExecutor") Executor imageDecoderExecutor,
-                                 Optional<ReceiptDateStore> dateStore,
+                                 Optional<ReceiptDetailStore> receiptStore,
                                  @Value("${app.waybill.zone:Asia/Phnom_Penh}") String zone,
                                  @Value("${gemini.api.date-read-budget-seconds:60}") int dateReadBudgetSeconds,
                                  @Value("${gemini.api.date-read-batch-size:6}") int dateReadBatchSize) {
         this(zxingDecoderService, geminiVisionService, imageDecoderExecutor, Clock.system(ZoneId.of(zone)),
-                dateStore, Duration.ofSeconds(Math.max(1, dateReadBudgetSeconds)), dateReadBatchSize);
+                receiptStore, Duration.ofSeconds(Math.max(1, dateReadBudgetSeconds)), dateReadBatchSize);
     }
 
     BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
                           GeminiVisionService geminiVisionService,
                           Executor imageDecoderExecutor,
                           Clock clock,
-                          Optional<ReceiptDateStore> dateStore,
+                          Optional<ReceiptDetailStore> receiptStore,
                           Duration dateReadBudget,
                           int dateReadBatchSize) {
         this.zxingDecoderService = zxingDecoderService;
         this.geminiVisionService = geminiVisionService;
         this.imageDecoderExecutor = imageDecoderExecutor;
         this.clock = clock;
-        this.dateStore = dateStore;
+        this.receiptStore = receiptStore;
         this.dateReadBudget = dateReadBudget;
         this.dateReadBatchSize = Math.max(1, dateReadBatchSize);
     }
@@ -103,9 +103,9 @@ public class BarcodeDecoderService {
                           GeminiVisionService geminiVisionService,
                           Executor imageDecoderExecutor,
                           Clock clock,
-                          Optional<ReceiptDateStore> dateStore,
+                          Optional<ReceiptDetailStore> receiptStore,
                           Duration dateReadBudget) {
-        this(zxingDecoderService, geminiVisionService, imageDecoderExecutor, clock, dateStore, dateReadBudget,
+        this(zxingDecoderService, geminiVisionService, imageDecoderExecutor, clock, receiptStore, dateReadBudget,
                 DEFAULT_DATE_READ_BATCH_SIZE);
     }
 
@@ -195,11 +195,18 @@ public class BarcodeDecoderService {
         }
 
         LocalDate today = LocalDate.now(clock);
-        Map<String, ReceiptDateStore.SavedDate> saved = findSavedDates(indexesByWaybill.keySet());
-        saved.forEach((waybill, date) -> {
+        Map<String, ReceiptDetailStore.SavedReceipt> saved = new LinkedHashMap<>();
+        findSavedReceipts(indexesByWaybill.keySet()).forEach((waybill, receipt) -> {
+            // A receipt saved before customer names were read is read once more
+            if (receipt.isComplete()) {
+                saved.put(waybill, receipt);
+            }
+        });
+        saved.forEach((waybill, receipt) -> {
             for (int index : indexesByWaybill.getOrDefault(waybill, List.of())) {
-                results.get(index).setCreateDateText(date.text());
-                results.get(index).setCreateDate(date.date().toString());
+                results.get(index).setCreateDateText(receipt.text());
+                results.get(index).setCreateDate(receipt.date().toString());
+                results.get(index).setCustomerName(blankToNull(receipt.customerName()));
             }
         });
 
@@ -226,7 +233,7 @@ public class BarcodeDecoderService {
 
         awaitReads(reads);
         int unfinished = 0;
-        Map<String, ReceiptDateStore.SavedDate> newDates = new LinkedHashMap<>();
+        Map<String, ReceiptDetailStore.SavedReceipt> newReceipts = new LinkedHashMap<>();
         for (int b = 0; b < batches.size(); b++) {
             CompletableFuture<List<GeminiVisionService.ReceiptDateRead>> read = reads.get(b);
             List<String> batch = batches.get(b);
@@ -240,16 +247,17 @@ public class BarcodeDecoderService {
                 BarcodeResult readPhoto = results.get(indexes.get(0));
                 correctMisreadBarcode(readings.get(i), localScans.get(indexes.get(0)), indexes, results);
                 for (int index : indexes) {
-                    ReceiptDateStore.SavedDate date = applyReading(results.get(index), readings.get(i), readPhoto, today);
-                    if (date != null) {
-                        newDates.putIfAbsent(waybillKey(readPhoto.getDecodedValue()), date);
+                    ReceiptDetailStore.SavedReceipt receipt =
+                            applyReading(results.get(index), readings.get(i), readPhoto, today);
+                    if (receipt != null) {
+                        newReceipts.putIfAbsent(waybillKey(readPhoto.getDecodedValue()), receipt);
                     }
                 }
             }
         }
         log.info("Receipt dates: {} reused, {} read in {} request(s), {} not finished within {}s",
                 saved.size(), toRead.size() - unfinished, batches.size(), unfinished, dateReadBudget.toSeconds());
-        saveDates(newDates);
+        saveReceipts(newReceipts);
     }
 
     private void awaitReads(List<CompletableFuture<List<GeminiVisionService.ReceiptDateRead>>> reads) {
@@ -283,8 +291,8 @@ public class BarcodeDecoderService {
         return readings;
     }
 
-    private ReceiptDateStore.SavedDate applyReading(BarcodeResult result, GeminiVisionService.ReceiptDateRead reading,
-                                                    BarcodeResult readPhoto, LocalDate today) {
+    private ReceiptDetailStore.SavedReceipt applyReading(BarcodeResult result, GeminiVisionService.ReceiptDateRead reading,
+                                                         BarcodeResult readPhoto, LocalDate today) {
         if (reading.failed()) {
             result.setCreateDateProblem((reading.quotaExhausted()
                     ? ReceiptDateValidator.Problem.QUOTA_EXHAUSTED
@@ -299,6 +307,7 @@ public class BarcodeDecoderService {
             // Kept so the reconciliation can still use the printed waybill when only it is in the Excel table
             ReceiptDateValidator.Result validated = ReceiptDateValidator.validate(reading.text(), today);
             result.setPrintedWaybill(reading.waybillNo().trim());
+            result.setPrintedWaybillCustomerName(blankToNull(reading.customerName()));
             if (validated.isValid()) {
                 result.setPrintedWaybillCreateDate(validated.date().toString());
             } else {
@@ -308,12 +317,21 @@ public class BarcodeDecoderService {
         }
         ReceiptDateValidator.Result validated = ReceiptDateValidator.validate(reading.text(), today);
         result.setCreateDateText(validated.rawText());
+        result.setCustomerName(blankToNull(reading.customerName()));
         if (validated.isValid()) {
             result.setCreateDate(validated.date().toString());
-            return new ReceiptDateStore.SavedDate(validated.date(), validated.rawText());
+        } else {
+            result.setCreateDateProblem(validated.problem().name());
         }
-        result.setCreateDateProblem(validated.problem().name());
-        return null;
+        if (!validated.isValid() && result.getCustomerName() == null) {
+            return null;
+        }
+        return new ReceiptDetailStore.SavedReceipt(
+                validated.isValid() ? validated.date() : null, validated.rawText(), reading.customerName().trim());
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**
@@ -373,32 +391,32 @@ public class BarcodeDecoderService {
         return decodedValue.trim().toUpperCase(Locale.ROOT);
     }
 
-    private Map<String, ReceiptDateStore.SavedDate> findSavedDates(Collection<String> waybills) {
-        if (dateStore.isEmpty()) {
+    private Map<String, ReceiptDetailStore.SavedReceipt> findSavedReceipts(Collection<String> waybills) {
+        if (receiptStore.isEmpty()) {
             return Map.of();
         }
         try {
-            return dateStore.get().findDates(waybills);
+            return receiptStore.get().findReceipts(waybills);
         } catch (Exception e) {
-            log.warn("Could not load saved receipt dates: {}", e.getMessage());
+            log.warn("Could not load saved receipt details: {}", e.getMessage());
             return Map.of();
         }
     }
 
-    private void saveDates(Map<String, ReceiptDateStore.SavedDate> dates) {
-        if (dateStore.isEmpty() || dates.isEmpty()) {
+    private void saveReceipts(Map<String, ReceiptDetailStore.SavedReceipt> receipts) {
+        if (receiptStore.isEmpty() || receipts.isEmpty()) {
             return;
         }
-        Map<String, ReceiptDateStore.SavedDate> storable = new LinkedHashMap<>();
-        dates.forEach((waybill, date) -> {
+        Map<String, ReceiptDetailStore.SavedReceipt> storable = new LinkedHashMap<>();
+        receipts.forEach((waybill, receipt) -> {
             if (waybill.length() <= MAX_SAVED_WAYBILL_LENGTH) {
-                storable.put(waybill, date);
+                storable.put(waybill, receipt);
             }
         });
         try {
-            dateStore.get().saveDates(storable);
+            receiptStore.get().saveReceipts(storable);
         } catch (Exception e) {
-            log.warn("Could not save receipt dates: {}", e.getMessage());
+            log.warn("Could not save receipt details: {}", e.getMessage());
         }
     }
 

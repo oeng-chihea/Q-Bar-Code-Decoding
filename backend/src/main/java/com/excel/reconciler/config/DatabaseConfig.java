@@ -1,8 +1,8 @@
 package com.excel.reconciler.config;
 
-import com.excel.reconciler.jdbc.JdbcReceiptDateStore;
+import com.excel.reconciler.jdbc.JdbcReceiptDetailStore;
 import com.excel.reconciler.jdbc.JdbcWaybillTrackingStore;
-import com.excel.reconciler.service.ReceiptDateStore;
+import com.excel.reconciler.service.ReceiptDetailStore;
 import com.excel.reconciler.service.WaybillTrackingStore;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -43,7 +43,7 @@ public class DatabaseConfig {
     }
 
     @Bean
-    public ReceiptDateStore receiptDateStore(DataSource dataSource) {
-        return new JdbcReceiptDateStore(new JdbcTemplate(dataSource));
+    public ReceiptDetailStore receiptDetailStore(DataSource dataSource) {
+        return new JdbcReceiptDetailStore(new JdbcTemplate(dataSource));
     }
 }

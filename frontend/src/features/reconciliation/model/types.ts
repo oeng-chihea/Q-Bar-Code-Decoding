@@ -16,6 +16,8 @@ export interface BarcodeResult {
   createDateProblem?: 'NOT_FOUND' | 'UNREADABLE' | 'FUTURE_DATE' | 'READ_FAILED' | 'QUOTA_EXHAUSTED' | 'WAYBILL_MISMATCH';
   // The waybill printed on the receipt, set only when it still differs from the barcode (WAYBILL_MISMATCH)
   printedWaybill?: string;
+  // The customer's name printed on the receipt
+  customerName?: string;
 }
 
 export interface UnmatchedImageDownload {
@@ -48,6 +50,8 @@ export interface UnmatchedWaybill {
   overdueDays: number;
   status: WaybillStatus;
   inThisUpload: boolean;
+  // From the receipt scanned in this or an earlier upload; missing when no receipt name is known
+  customerName?: string | null;
 }
 
 export interface ReconciliationResponse {

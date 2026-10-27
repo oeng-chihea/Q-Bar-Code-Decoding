@@ -167,22 +167,28 @@ public class GeminiVisionService {
      * when {@code failed} is false. {@code quotaExhausted} marks a failure that will not clear until the
      * daily quota resets.
      */
-    public record ReceiptDateRead(String text, String waybillNo, boolean failed, boolean quotaExhausted) {
+    public record ReceiptDateRead(String text, String waybillNo, String customerName,
+                                  boolean failed, boolean quotaExhausted) {
         public static ReceiptDateRead found(String text) {
             return found(text, "");
         }
 
         public static ReceiptDateRead found(String text, String waybillNo) {
-            return new ReceiptDateRead(text == null ? "" : text, waybillNo == null ? "" : waybillNo, false, false);
+            return found(text, waybillNo, "");
+        }
+
+        public static ReceiptDateRead found(String text, String waybillNo, String customerName) {
+            return new ReceiptDateRead(text == null ? "" : text, waybillNo == null ? "" : waybillNo,
+                    customerName == null ? "" : customerName, false, false);
         }
 
         public static ReceiptDateRead failure() {
-            return new ReceiptDateRead("", "", true, false);
+            return new ReceiptDateRead("", "", "", true, false);
         }
 
         /** Failed because the free-tier daily quota is used up, which retrying cannot fix. */
         public static ReceiptDateRead quotaUsedUp() {
-            return new ReceiptDateRead("", "", true, true);
+            return new ReceiptDateRead("", "", "", true, true);
         }
     }
 
@@ -207,6 +213,11 @@ public class GeminiVisionService {
                   If there is no "CREATED" label with a date, return an empty string.
                 - waybillNo: the waybill (tracking) number printed on that receipt as text, for example
                   "J01419454153", exactly as printed. If it is not printed or not readable, return an empty string.
+                - customerName: the customer's name on the shop receipt. Under the receiver label "អ្នកទទួល" the
+                  receipt prints the customer's phone number, then the address or place, then the name on the
+                  last line, for example "Nhim Sarey". Return only the name, exactly as
+                  printed (Khmer or Latin): never the phone number, the address, the shop's own details or the
+                  courier sticker. If no name is printed or it is not readable, return an empty string.
                 Read each receipt only from its own image. Never guess, and never return any other date or number.
                 """.formatted(images.size());
 
@@ -215,8 +226,9 @@ public class GeminiVisionService {
                 "properties", Map.of(
                         "receipt", Map.of("type", "INTEGER"),
                         "createdText", Map.of("type", "STRING"),
-                        "waybillNo", Map.of("type", "STRING")),
-                "required", List.of("receipt", "createdText", "waybillNo")
+                        "waybillNo", Map.of("type", "STRING"),
+                        "customerName", Map.of("type", "STRING")),
+                "required", List.of("receipt", "createdText", "waybillNo", "customerName")
         );
         Map<String, Object> schema = Map.of(
                 "type", "OBJECT",
@@ -233,7 +245,8 @@ public class GeminiVisionService {
                     int index = images.size() == 1 ? 0 : node.path("receipt").asInt(0) - 1;
                     if (index >= 0 && index < images.size()) {
                         readings.set(index, ReceiptDateRead.found(
-                                node.path("createdText").asText("").trim(), node.path("waybillNo").asText("").trim()));
+                                node.path("createdText").asText("").trim(), node.path("waybillNo").asText("").trim(),
+                                node.path("customerName").asText("").trim()));
                     }
                 }
                 return readings;

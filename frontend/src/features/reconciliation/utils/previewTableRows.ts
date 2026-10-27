@@ -68,3 +68,10 @@ export function buildPreviewTableRows(
 
   return [...excelRows, ...waybillRows];
 }
+
+/** The customer's name from the row's receipt photo, or for an unmatched serial number from its saved receipt. */
+export function customerNameOf(tableRow: PreviewTableRow): string | undefined {
+  const fromPhoto = tableRow.photos.find(({ item }) => item.customerName)?.item.customerName;
+  if (fromPhoto) return fromPhoto;
+  return tableRow.kind === 'waybill' ? tableRow.waybill.customerName || undefined : undefined;
+}

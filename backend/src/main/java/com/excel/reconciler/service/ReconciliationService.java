@@ -30,17 +30,20 @@ public class ReconciliationService {
     private final ExcelImageExtractorService excelImageExtractorService;
     private final WaybillTrackingService waybillTrackingService;
     private final UnmatchedWaybillSheetWriter unmatchedWaybillSheetWriter;
+    private final Optional<ReceiptDetailStore> receiptStore;
 
     public ReconciliationService(BarcodeDecoderService barcodeDecoderService,
                                  ExcelHighlightService excelHighlightService,
                                  ExcelImageExtractorService excelImageExtractorService,
                                  WaybillTrackingService waybillTrackingService,
-                                 UnmatchedWaybillSheetWriter unmatchedWaybillSheetWriter) {
+                                 UnmatchedWaybillSheetWriter unmatchedWaybillSheetWriter,
+                                 Optional<ReceiptDetailStore> receiptStore) {
         this.barcodeDecoderService = barcodeDecoderService;
         this.excelHighlightService = excelHighlightService;
         this.excelImageExtractorService = excelImageExtractorService;
         this.waybillTrackingService = waybillTrackingService;
         this.unmatchedWaybillSheetWriter = unmatchedWaybillSheetWriter;
+        this.receiptStore = receiptStore;
     }
 
     public ReconciliationResponse reconcile(MultipartFile excelFile,
@@ -183,7 +186,9 @@ public class ReconciliationService {
         // 5. Track unmatched waybills over time and list the overdue ones in the downloaded workbook
         WaybillTrackingService.TrackingResult tracking =
                 waybillTrackingService.track(unmatchedCodes, matchedImageCodes, reconciliationId);
-        byte[] workbookWithTracking = appendUnmatchedSheet(excelResult.getModifiedExcelBytes(), tracking);
+        List<UnmatchedWaybill> unmatchedWaybills = withCustomerNames(tracking.waybills(), scanResults);
+        byte[] workbookWithTracking = appendUnmatchedSheet(
+                excelResult.getModifiedExcelBytes(), unmatchedWaybills, tracking.overdueAfterDays());
 
         // 6. Build response
         String base64Excel = Base64.getEncoder().encodeToString(workbookWithTracking);
@@ -218,7 +223,7 @@ public class ReconciliationService {
         response.setExecutionTimeMs(executionTimeMs);
         response.setTrackingAvailable(tracking.available());
         response.setOverdueAfterDays(tracking.overdueAfterDays());
-        response.setUnmatchedWaybills(tracking.waybills());
+        response.setUnmatchedWaybills(unmatchedWaybills);
         response.setOverdueCount((int) tracking.overdueCount());
 
         log.info("Reconciliation complete: {} images scanned, {} decoded, {} matched in Excel (Sheet '{}') in {}ms",
@@ -228,10 +233,9 @@ public class ReconciliationService {
         return response;
     }
 
-    private byte[] appendUnmatchedSheet(byte[] workbookBytes, WaybillTrackingService.TrackingResult tracking) {
-        List<UnmatchedWaybill> waybills = tracking.waybills();
+    private byte[] appendUnmatchedSheet(byte[] workbookBytes, List<UnmatchedWaybill> waybills, int overdueAfterDays) {
         try {
-            return unmatchedWaybillSheetWriter.append(workbookBytes, waybills, tracking.overdueAfterDays());
+            return unmatchedWaybillSheetWriter.append(workbookBytes, waybills, overdueAfterDays);
         } catch (Exception e) {
             // The extra sheet is a convenience; never lose the highlighted workbook because of it
             log.warn("Could not add the unmatched waybills sheet to the workbook: {}", e.getMessage());
@@ -264,8 +268,43 @@ public class ReconciliationService {
             res.setAllExtractedValues(List.of(printed));
             res.setCreateDate(res.getPrintedWaybillCreateDate());
             res.setCreateDateProblem(res.getPrintedWaybillCreateDateProblem());
+            res.setCustomerName(res.getPrintedWaybillCustomerName());
             res.setPrintedWaybill(null);
         }
+    }
+
+    /**
+     * Each unmatched serial number gets its customer's name: from this upload's receipts, or else from
+     * the receipt saved when it was scanned in an earlier upload.
+     */
+    private List<UnmatchedWaybill> withCustomerNames(List<UnmatchedWaybill> waybills, List<BarcodeResult> scanResults) {
+        if (waybills == null || waybills.isEmpty()) {
+            return waybills == null ? List.of() : waybills;
+        }
+        Map<String, String> names = new HashMap<>();
+        for (BarcodeResult res : scanResults) {
+            if (res.getDecodedValue() != null && res.getCustomerName() != null) {
+                names.putIfAbsent(ExcelHighlightService.normalize(res.getDecodedValue()), res.getCustomerName());
+            }
+        }
+        List<String> missing = waybills.stream()
+                .map(UnmatchedWaybill::waybillNo)
+                .filter(serial -> !names.containsKey(ExcelHighlightService.normalize(serial)))
+                .toList();
+        if (!missing.isEmpty() && receiptStore.isPresent()) {
+            try {
+                receiptStore.get().findReceipts(missing).forEach((serial, receipt) -> {
+                    if (receipt.customerName() != null && !receipt.customerName().isBlank()) {
+                        names.putIfAbsent(ExcelHighlightService.normalize(serial), receipt.customerName());
+                    }
+                });
+            } catch (Exception e) {
+                log.warn("Could not load customer names for unmatched serial numbers: {}", e.getMessage());
+            }
+        }
+        return waybills.stream()
+                .map(waybill -> waybill.withCustomerName(names.get(ExcelHighlightService.normalize(waybill.waybillNo()))))
+                .toList();
     }
 
     private boolean isInTable(String code, List<List<String>> rows) {

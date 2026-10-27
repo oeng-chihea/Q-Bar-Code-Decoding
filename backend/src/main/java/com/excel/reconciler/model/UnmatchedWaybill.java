@@ -11,6 +11,7 @@ import java.time.LocalDate;
  * @param daysLeft      days remaining before it becomes overdue (0 once due or overdue)
  * @param overdueDays   days past the overdue limit (0 while not overdue)
  * @param inThisUpload  true when the current upload contains this waybill unmatched
+ * @param customerName  the customer's name read from the waybill's receipt, or null when unknown
  */
 public record UnmatchedWaybill(
         String waybillNo,
@@ -20,5 +21,16 @@ public record UnmatchedWaybill(
         long daysLeft,
         long overdueDays,
         WaybillStatus status,
-        boolean inThisUpload) {
+        boolean inThisUpload,
+        String customerName) {
+
+    public UnmatchedWaybill(String waybillNo, LocalDate startDate, LocalDate dueDate, long daysOpen,
+                            long daysLeft, long overdueDays, WaybillStatus status, boolean inThisUpload) {
+        this(waybillNo, startDate, dueDate, daysOpen, daysLeft, overdueDays, status, inThisUpload, null);
+    }
+
+    public UnmatchedWaybill withCustomerName(String name) {
+        return new UnmatchedWaybill(waybillNo, startDate, dueDate, daysOpen, daysLeft, overdueDays, status,
+                inThisUpload, name);
+    }
 }

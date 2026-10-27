@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   buildPreviewTableRows,
+  customerNameOf,
   findDuplicateSource,
 } from '../src/features/reconciliation/utils/previewTableRows.ts';
 
@@ -94,6 +95,7 @@ test('the spreadsheet table has View and tracking columns and no Status column o
   assert.match(source, /t\('preview\.colView'\)/);
   assert.match(source, /t\('preview\.colOver', \{ days: overdueAfterDays \}\)/);
   assert.match(source, /t\('preview\.colUnmatchedWaybill'\)/);
+  assert.match(source, /t\('preview\.colCustomerName'\)/);
   assert.match(source, /<WaybillStatusBadge/);
   assert.match(source, /<ReceiptPreviewModal/);
   assert.match(source, /id=\{WAYBILL_TABLE_ID\}/);
@@ -125,4 +127,18 @@ test('duplicate cards stay in the unmatched section with a notice naming the ori
   assert.match(grid, /return !isItemMatched\(result\);/);
   assert.match(grid, /t\('unmatched\.duplicateTag'\)/);
   assert.match(grid, /t\('unmatched\.duplicateOf', \{ filename: duplicateSource\.original\.filename \}\)/);
+});
+
+test('shows the customer name from the receipt photo, or the saved one for an earlier serial number', () => {
+  const scans = [
+    scan('matched.jpg', 'J01416824762', { matched: true, customerName: 'Nhim Sarey' }),
+    scan('unmatched.jpg', 'W-1', { matched: false, customerName: 'Sok Dara' }),
+  ];
+  const rows = buildPreviewTableRows(
+    [row(1, 'J01416824762', true), row(2, 'J0000', false)],
+    [waybill('W-1', { customerName: 'Old Name' }), waybill('W-2', { inThisUpload: false, customerName: 'Chan Lina' }), waybill('W-3')],
+    scans,
+  );
+
+  assert.deepEqual(rows.map(customerNameOf), ['Nhim Sarey', undefined, 'Sok Dara', 'Chan Lina', undefined]);
 });

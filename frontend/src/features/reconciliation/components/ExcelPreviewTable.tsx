@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   FileSpreadsheet,
   Download,
@@ -14,8 +15,8 @@ import { downloadReconciliation } from '@/features/reconciliation/api/reconcilia
 import { WaybillStatusBadge } from '@/features/reconciliation/components/WaybillStatusBadge';
 import { ReceiptPreviewModal } from '@/features/reconciliation/components/ReceiptPreviewModal';
 import { useReceiptPreview } from '@/features/reconciliation/hooks/useReceiptPreview';
-import { buildPreviewTableRows } from '@/features/reconciliation/utils/previewTableRows';
-import type { ReceiptPhoto } from '@/features/reconciliation/utils/previewTableRows';
+import { buildPreviewTableRows, customerNameOf } from '@/features/reconciliation/utils/previewTableRows';
+import type { PreviewTableRow, ReceiptPhoto } from '@/features/reconciliation/utils/previewTableRows';
 import { findReceiptFile } from '@/features/reconciliation/utils/receiptFiles';
 import { WAYBILL_TABLE_ID } from '@/features/reconciliation/utils/waybillTracking';
 import { useTranslation } from '@/shared/i18n/i18n';
@@ -54,7 +55,9 @@ export const ExcelPreviewTable = ({
 
   const showTracking = unmatchedWaybills.length > 0;
   const tableRows = buildPreviewTableRows(previewRows, unmatchedWaybills, scanResults);
-  const fixedColumnCount = showTracking ? 4 : 2;
+  // Customer name sits right after the waybill column, or first among the Excel columns when there is none
+  const customerColumnAfter = columns.findIndex((col) => col.toLowerCase() === matchedColumnName.toLowerCase());
+  const fixedColumnCount = (showTracking ? 4 : 2) + 1;
 
   const handleDownload = async () => {
     if (!reconciliationId || isDownloading) return;
@@ -130,6 +133,24 @@ export const ExcelPreviewTable = ({
 
   const emptyCell = <span className="text-[10px] text-[#737887] font-normal">&mdash;</span>;
 
+  const withCustomerColumn = (excelCells: ReactNode[], customerCell: ReactNode) => {
+    const at = customerColumnAfter + 1;
+    return [
+      ...excelCells.slice(0, at),
+      <Fragment key="customer-name">{customerCell}</Fragment>,
+      ...excelCells.slice(at),
+    ];
+  };
+
+  const renderCustomerCell = (tableRow: PreviewTableRow) => {
+    const name = customerNameOf(tableRow);
+    return (
+      <td className="py-2.5 px-4 border-r border-[#24252B] whitespace-nowrap">
+        {name ? <span className="text-[#F3F4F6]">{name}</span> : emptyCell}
+      </td>
+    );
+  };
+
   return (
     <div
       id={WAYBILL_TABLE_ID}
@@ -188,7 +209,7 @@ export const ExcelPreviewTable = ({
                   </th>
                 </>
               )}
-              {columns.map((col, idx) => {
+              {withCustomerColumn(columns.map((col, idx) => {
                 const isTarget = col.toLowerCase() === matchedColumnName.toLowerCase();
                 return (
                   <th
@@ -207,7 +228,11 @@ export const ExcelPreviewTable = ({
                     </div>
                   </th>
                 );
-              })}
+              }), (
+                <th className="py-2.5 px-4 font-semibold border-r border-[#2B2D35] whitespace-nowrap">
+                  {t('preview.colCustomerName')}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-[#24252B]">
@@ -250,9 +275,10 @@ export const ExcelPreviewTable = ({
                           </span>
                         )}
                       </td>
-                      {columns.map((_, cIdx) => (
-                        <td key={cIdx} className="py-2.5 px-4 border-r border-[#24252B]" />
-                      ))}
+                      {withCustomerColumn(
+                        columns.map((_, cIdx) => <td key={cIdx} className="py-2.5 px-4 border-r border-[#24252B]" />),
+                        renderCustomerCell(tableRow),
+                      )}
                     </tr>
                   );
                 }
@@ -279,7 +305,7 @@ export const ExcelPreviewTable = ({
                         <td className="py-2 px-3.5 border-r border-[#24252B]">{emptyCell}</td>
                       </>
                     )}
-                    {columns.map((col, cIdx) => {
+                    {withCustomerColumn(columns.map((col, cIdx) => {
                       const val = row.cells[col] || '';
                       const isTarget = col.toLowerCase() === matchedColumnName.toLowerCase();
                       return (
@@ -296,7 +322,7 @@ export const ExcelPreviewTable = ({
                           {val || <span className="text-[#5A5E6B] italic font-sans">null</span>}
                         </td>
                       );
-                    })}
+                    }), renderCustomerCell(tableRow))}
                   </tr>
                 );
               })

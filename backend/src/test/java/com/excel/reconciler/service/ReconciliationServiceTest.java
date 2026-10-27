@@ -13,6 +13,8 @@ import java.time.LocalDate;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -38,7 +40,8 @@ class ReconciliationServiceTest {
         when(tracking.track(any(), any(), any()))
                 .thenReturn(new WaybillTrackingService.TrackingResult(false, 6, List.of()));
         when(sheetWriter.append(any(), any(), anyInt())).thenAnswer(call -> call.getArgument(0));
-        return new ReconciliationService(barcodeDecoder, highlighter, extractor, tracking, sheetWriter);
+        return new ReconciliationService(barcodeDecoder, highlighter, extractor, tracking, sheetWriter,
+                Optional.empty());
     }
 
     @Test
@@ -192,6 +195,7 @@ class ReconciliationServiceTest {
         result.setCreateDateProblem("WAYBILL_MISMATCH");
         result.setPrintedWaybill(printed);
         result.setPrintedWaybillCreateDate("2026-10-06");
+        result.setPrintedWaybillCustomerName("Nhim Sarey");
         return result;
     }
 
@@ -230,6 +234,7 @@ class ReconciliationServiceTest {
         assertEquals("J01421594677", scan.getDecodedValue());
         assertEquals("2026-10-06", scan.getCreateDate());
         assertEquals(null, scan.getCreateDateProblem());
+        assertEquals("Nhim Sarey", scan.getCustomerName());
         assertTrue(scan.isMatched());
     }
 
@@ -252,6 +257,47 @@ class ReconciliationServiceTest {
 
         assertEquals(Set.of("J00521590777"), codes.getValue());
         assertEquals("WAYBILL_MISMATCH", scan.getCreateDateProblem());
+    }
+
+    @Test
+    void unmatchedSerialNumbersGetTheirCustomerNamesFromThisUploadOrEarlierReceipts() throws Exception {
+        BarcodeDecoderService barcodeDecoder = mock(BarcodeDecoderService.class);
+        ExcelHighlightService highlighter = mock(ExcelHighlightService.class);
+        ExcelImageExtractorService extractor = mock(ExcelImageExtractorService.class);
+        ReceiptDetailStore store = mock(ReceiptDetailStore.class);
+        MockMultipartFile tableImage = new MockMultipartFile("excelFile", "inventory.png", "image/png", new byte[]{1});
+
+        when(extractor.processExcelImage(tableImage)).thenReturn(
+                new ExcelImageExtractorService.ExtractedExcelData(
+                        true, false, null, "Sheet", List.of("Waybill Number"),
+                        List.of(List.of("J0001")), new byte[]{1, 2, 3}));
+        BarcodeResult unmatchedScan = new BarcodeResult("2.jpg", "J9999", List.of("J9999"), "ZXING", true, "CODE_128", null);
+        unmatchedScan.setCustomerName("Nhim Sarey");
+        when(barcodeDecoder.decodeBatch(any())).thenReturn(List.of(unmatchedScan));
+        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
+                .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
+                        new byte[]{4, 5}, 1, 0, "Waybill Number", "Sheet",
+                        List.of("Waybill Number"), Set.of(), Collections.emptyList()));
+        when(sheetWriter.append(any(), any(), anyInt())).thenAnswer(call -> call.getArgument(0));
+        UnmatchedWaybill thisUpload = new UnmatchedWaybill("J9999", LocalDate.of(2026, 10, 28),
+                LocalDate.of(2026, 11, 3), 0, 6, 0, WaybillStatus.NEW, true);
+        UnmatchedWaybill earlier = new UnmatchedWaybill("J8888", LocalDate.of(2026, 10, 20),
+                LocalDate.of(2026, 10, 26), 8, 0, 2, WaybillStatus.OVERDUE, false);
+        UnmatchedWaybill unknown = new UnmatchedWaybill("J7777", LocalDate.of(2026, 10, 20),
+                LocalDate.of(2026, 10, 26), 8, 0, 2, WaybillStatus.OVERDUE, false);
+        when(tracking.track(any(), any(), any()))
+                .thenReturn(new WaybillTrackingService.TrackingResult(true, 6, List.of(thisUpload, earlier, unknown)));
+        when(store.findReceipts(any())).thenReturn(Map.of(
+                "J8888", new ReceiptDetailStore.SavedReceipt(LocalDate.of(2026, 10, 19), "Oct 19, 2026", "Sok Dara")));
+
+        var response = new ReconciliationService(barcodeDecoder, highlighter, extractor, tracking, sheetWriter,
+                Optional.of(store)).reconcile(tableImage, List.of(tableImage), "Waybill Number", false, "rec-1");
+
+        List<UnmatchedWaybill> expected = List.of(thisUpload.withCustomerName("Nhim Sarey"),
+                earlier.withCustomerName("Sok Dara"), unknown);
+        assertEquals(expected, response.getUnmatchedWaybills());
+        verify(store).findReceipts(List.of("J8888", "J7777"));
+        verify(sheetWriter).append(any(), eq(expected), eq(6));
     }
 
     @Test
