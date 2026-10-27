@@ -7,9 +7,7 @@ import {
   Trash2,
   Play,
   Loader2,
-  AlertCircle,
   AlertTriangle,
-  Sparkles,
   X,
   Plus,
 } from 'lucide-react';
@@ -156,18 +154,18 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             }}
           />
 
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-              <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[#34D399] uppercase tracking-wider">
-                <FileImage className="w-4 h-4" />
-                {t('upload.step1')}
-              </div>
-              {excelFile && (
+          <div className="flex flex-1 flex-col">
+            {excelFile && (
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[#34D399] uppercase tracking-wider">
+                  <FileImage className="w-4 h-4" />
+                  {t('upload.step1')}
+                </div>
                 <span className="inline-flex max-w-full flex-wrap items-center gap-1 text-xs font-semibold px-2 py-1 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36]">
-                  <FileCheck className="w-3.5 h-3.5" /> {t('upload.spreadsheetReady')}
+                  <FileCheck className="w-3.5 h-3.5" />
                 </span>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Error Message for an invalid Excel file */}
             {excelErrorKey && (
@@ -190,16 +188,12 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             )}
 
             {!excelFile ? (
-              <div className="flex flex-col items-center justify-center py-6 text-center">
-                <div className="p-3 rounded-md bg-[#24262E] text-[#34D399] mb-3 border border-[#2D2F36]">
+              <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
+                <div className="p-3 rounded-md bg-[#24262E] text-[#34D399] border border-[#2D2F36]">
                   <FileImage className="w-6 h-6" />
                 </div>
-                <div className="text-sm font-medium text-[#F3F4F6] mb-1">
-                  {t('upload.browse')}
-                </div>
-                <div className="text-xs text-[#8E929E] space-y-0.5">
-                  <div>{t('upload.supports')}</div>
-                  <div className="text-[11px] text-[#A0A5B5]">{t('upload.tableHint')}</div>
+                <div className="mt-3 text-xs font-semibold text-[#34D399] uppercase tracking-wider">
+                  {t('upload.step1')}
                 </div>
               </div>
             ) : (
@@ -223,7 +217,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                       </span>
                     </div>
                     <div className="text-xs text-[#8E929E]">
-                      {formatFileSize(excelFile.size)} &bull; {t('upload.tableImage')}
+                      {formatFileSize(excelFile.size)}
                     </div>
                   </div>
                 </div>
@@ -242,11 +236,6 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                 </button>
               </div>
             )}
-          </div>
-
-          <div className="text-[11px] text-[#737887] flex items-center gap-1 mt-4">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-[#34D399]" />
-            <span>{t('upload.note')}</span>
           </div>
         </div>
 
@@ -282,17 +271,16 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             }}
           />
 
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-              <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[#A0E3E2] uppercase tracking-wider">
-                <Images className="w-4 h-4" />
-                {t('upload.step2')}
-              </div>
-              {imageFiles.length > 0 && (
+          <div className="flex flex-1 flex-col">
+            {imageFiles.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[#A0E3E2] uppercase tracking-wider">
+                  <Images className="w-4 h-4" />
+                  {t('upload.step2')}
+                </div>
                 <div className="flex max-w-full flex-wrap items-center gap-2">
                   <span className="text-xs font-semibold px-2 py-1 rounded bg-[#18393C] text-[#A0E3E2] border border-[#23585D]">
-                    {imageFiles.length} {imageFiles.length === 1 ? t('upload.image') : t('upload.images')} (
-                    {formatFileSize(totalImageSize)})
+                    {imageFiles.length} ({formatFileSize(totalImageSize)})
                   </span>
                   <button
                     type="button"
@@ -305,22 +293,18 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                     aria-label={t('upload.clearAll')}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>{t('upload.clearAll')}</span>
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {imageFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-6 text-center">
-                <div className="p-3 rounded-md bg-[#24262E] text-[#A0E3E2] mb-3 border border-[#2D2F36]">
+              <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
+                <div className="p-3 rounded-md bg-[#24262E] text-[#A0E3E2] border border-[#2D2F36]">
                   <UploadCloud className="w-6 h-6" />
                 </div>
-                <div className="text-sm font-medium text-[#F3F4F6] mb-1">
-                  {t('upload.dropzone')}
-                </div>
-                <div className="text-xs text-[#8E929E]">
-                  {t('upload.batchCount')}
+                <div className="mt-3 text-xs font-semibold text-[#A0E3E2] uppercase tracking-wider">
+                  {t('upload.step2')}
                 </div>
               </div>
             ) : (
@@ -368,17 +352,13 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                   type="button"
                   onClick={() => imageInputRef.current?.click()}
                   className="w-full min-h-11 py-1.5 text-xs text-center font-medium text-[#A0E3E2] hover:text-white bg-[#172D30] rounded border border-[#23585D] hover:bg-[#1E3B3E] transition cursor-pointer flex items-center justify-center gap-1.5"
+                  title={t('upload.addMore')}
+                  aria-label={t('upload.addMore')}
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>{t('upload.addMore')}</span>
                 </button>
               </div>
             )}
-          </div>
-
-          <div className="text-[11px] text-[#737887] flex items-center gap-1 mt-4">
-            <Sparkles className="w-3.5 h-3.5 shrink-0 text-[#A0E3E2]" />
-            <span>{t('upload.parallel')}</span>
           </div>
         </div>
       </div>
