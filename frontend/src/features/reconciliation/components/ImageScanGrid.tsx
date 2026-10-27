@@ -1,31 +1,33 @@
-import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
-  Eye,
   Search,
   X,
   ScanLine,
-  ImageOff,
+  Copy,
   Download,
   Loader2,
 } from 'lucide-react';
-import type { BarcodeResult, UnmatchedWaybill } from '@/features/reconciliation/model/types';
+import type { BarcodeResult, ExcelRowPreview, UnmatchedWaybill } from '@/features/reconciliation/model/types';
 import { WaybillStatusBadge } from '@/features/reconciliation/components/WaybillStatusBadge';
+import { ReceiptPreviewModal } from '@/features/reconciliation/components/ReceiptPreviewModal';
+import { useReceiptPreview } from '@/features/reconciliation/hooks/useReceiptPreview';
 import { findWaybill } from '@/features/reconciliation/utils/waybillTracking';
 import { groupUnmatchedByBarcode } from '@/features/reconciliation/utils/unmatchedGrouping';
+import { findReceiptFile } from '@/features/reconciliation/utils/receiptFiles';
+import { findDuplicateSource } from '@/features/reconciliation/utils/previewTableRows';
 import {
   downloadUnmatchedImage,
   downloadUnmatchedImages,
 } from '@/features/reconciliation/api/reconciliationApi';
-import { saveOrShareImage } from '@/features/reconciliation/utils/imageSaveUtils';
 import { useTranslation } from '@/shared/i18n/i18n';
 
 interface ImageScanGridProps {
   scanResults: BarcodeResult[];
   matchedCodes: string[];
   imageFiles?: File[];
+  previewRows?: ExcelRowPreview[];
   reconciliationId?: string;
   unmatchedWaybills?: UnmatchedWaybill[];
   overdueAfterDays?: number;
@@ -35,6 +37,7 @@ export const ImageScanGrid = ({
   scanResults,
   matchedCodes,
   imageFiles,
+  previewRows = [],
   reconciliationId,
   unmatchedWaybills = [],
   overdueAfterDays = 0,
@@ -44,65 +47,10 @@ export const ImageScanGrid = ({
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadingImageIndex, setDownloadingImageIndex] = useState<number | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [isPreviewSaving, setIsPreviewSaving] = useState(false);
-  const [selectedPreviewImage, setSelectedPreviewImage] = useState<{
-    url?: string;
-    filename: string;
-    barcode?: string;
-    isFailed: boolean;
-    item?: BarcodeResult;
-    imageIndex?: number;
-    file?: File;
-  } | null>(null);
+  const { preview, setPreview, openPreview } = useReceiptPreview();
 
-  // Close preview modal on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelectedPreviewImage(null);
-      }
-    };
-    if (selectedPreviewImage) {
-      window.addEventListener('keydown', handleKeyDown);
-    }
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [selectedPreviewImage]);
-
-  const getFileForItem = (item: BarcodeResult, index: number): File | undefined => {
-    if (!imageFiles || imageFiles.length === 0) return undefined;
-
-    if (item.filename) {
-      const match = imageFiles.find((f) => {
-        if (f.name === item.filename) return true;
-        if (f.name.toLowerCase().trim() === item.filename.toLowerCase().trim()) return true;
-        const baseName = item.filename.split(/[/\\]/).pop();
-        if (baseName && (f.name === baseName || f.name.toLowerCase().trim() === baseName.toLowerCase().trim())) {
-          return true;
-        }
-        try {
-          const decoded = decodeURIComponent(item.filename);
-          if (f.name === decoded || f.name.toLowerCase().trim() === decoded.toLowerCase().trim()) {
-            return true;
-          }
-        } catch {
-          // ignore malformed URI components
-        }
-        return false;
-      });
-      if (match) return match;
-    }
-
-    // Fallback by 1:1 original position in scanResults
-    const originalIndex = scanResults.indexOf(item);
-    const targetIdx = originalIndex >= 0 ? originalIndex : index;
-    if (targetIdx >= 0 && targetIdx < imageFiles.length) {
-      return imageFiles[targetIdx];
-    }
-
-    return undefined;
-  };
+  const getFileForItem = (item: BarcodeResult, index: number): File | undefined =>
+    findReceiptFile(item, index, scanResults, imageFiles);
 
   const normalize = (str: string) =>
     (str || '').trim().replace(/[\s_\-/:()!']+/g, '').toLowerCase();
@@ -215,35 +163,6 @@ export const ImageScanGrid = ({
     }
   };
 
-  const handleSavePreviewImage = async () => {
-    if (!selectedPreviewImage || isPreviewSaving) return;
-    setIsPreviewSaving(true);
-    setDownloadError(null);
-    try {
-      if (selectedPreviewImage.file) {
-        await saveOrShareImage(selectedPreviewImage.file, selectedPreviewImage.filename);
-      } else if (
-        reconciliationId &&
-        selectedPreviewImage.item &&
-        selectedPreviewImage.imageIndex !== undefined
-      ) {
-        await downloadUnmatchedImage(
-          reconciliationId,
-          selectedPreviewImage.imageIndex,
-          selectedPreviewImage.filename,
-        );
-      } else if (selectedPreviewImage.url) {
-        const res = await fetch(selectedPreviewImage.url);
-        const blob = await res.blob();
-        await saveOrShareImage(blob, selectedPreviewImage.filename);
-      }
-    } catch (error: unknown) {
-      setDownloadError(error instanceof Error ? error.message : t('unmatched.downloadError'));
-    } finally {
-      setIsPreviewSaving(false);
-    }
-  };
-
   return (
     <div className="min-w-0 bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-4 sm:p-5 text-left space-y-4">
       {/* Header Controls */}
@@ -333,62 +252,21 @@ export const ImageScanGrid = ({
             const barcodeDisplay = group.barcode;
             const isFailed = !item.success || !barcodeDisplay;
             const trackedWaybill = findWaybill(unmatchedWaybills, barcodeDisplay);
+            const duplicateSource = item.duplicate
+              ? findDuplicateSource(item, scanResults, previewRows)
+              : undefined;
             const isImageDownloading = downloadingImageIndex === imageIndex;
 
             const onCardClick = () => {
-              const file = getFileForItem(item, index);
-
-              if (file) {
-                // 1. Read as permanent Data URL (completely immune to blob revocation / StrictMode)
-                const reader = new FileReader();
-                reader.onload = () => {
-                  if (typeof reader.result === 'string') {
-                    setSelectedPreviewImage({
-                      url: reader.result,
-                      filename: item.filename,
-                      barcode: barcodeDisplay,
-                      isFailed,
-                      item,
-                      imageIndex,
-                      file,
-                    });
-                  }
-                };
-                reader.onerror = () => {
-                  const freshUrl = URL.createObjectURL(file);
-                  setSelectedPreviewImage({
-                    url: freshUrl,
-                    filename: item.filename,
-                    barcode: barcodeDisplay,
-                    isFailed,
-                    item,
-                    imageIndex,
-                    file,
-                  });
-                };
-                reader.readAsDataURL(file);
-
-                // Immediate preview with a fresh Object URL
-                const instantUrl = URL.createObjectURL(file);
-                setSelectedPreviewImage({
-                  url: instantUrl,
-                  filename: item.filename,
-                  barcode: barcodeDisplay,
-                  isFailed,
-                  item,
-                  imageIndex,
-                  file,
-                });
-              } else {
-                setSelectedPreviewImage({
-                  url: item.previewUrl,
-                  filename: item.filename,
-                  barcode: barcodeDisplay,
-                  isFailed,
-                  item,
-                  imageIndex,
-                });
-              }
+              openPreview({
+                url: item.previewUrl,
+                filename: item.filename,
+                barcode: barcodeDisplay,
+                isFailed,
+                item,
+                imageIndex,
+                file: getFileForItem(item, index),
+              });
             };
 
             return (
@@ -447,6 +325,18 @@ export const ImageScanGrid = ({
                       </div>
                     )}
                   </div>
+                  {duplicateSource && (
+                    <div className="mt-2 flex min-w-0 items-start gap-1.5 rounded border border-[#5C1D24] bg-[#461B21]/50 px-2 py-1.5 text-[11px] text-[#FCA5A5]">
+                      <Copy className="w-3 h-3 shrink-0 mt-0.5" />
+                      <span className="min-w-0 break-words">
+                        {duplicateSource.original
+                          ? t('unmatched.duplicateOf', { filename: duplicateSource.original.filename })
+                          : t('unmatched.duplicateOfUnknown')}
+                        {duplicateSource.rowIndex !== undefined &&
+                          ` · ${t('unmatched.duplicateRow', { row: duplicateSource.rowIndex })}`}
+                      </span>
+                    </div>
+                  )}
                   {trackedWaybill && (
                     <div className="mt-2">
                       <WaybillStatusBadge waybill={trackedWaybill} overdueAfterDays={overdueAfterDays} />
@@ -454,7 +344,6 @@ export const ImageScanGrid = ({
                   )}
                 </div>
 
-                {/* Footer with filename, raw download, and click-to-preview controls */}
                 <div className="mt-3 border-t border-[#26272E] pt-2.5">
                 <div className="flex min-w-0 items-center justify-between gap-2">
                   <span className="min-w-0 flex-1 truncate text-[11px] text-[#737887]" title={item.filename}>
@@ -478,19 +367,6 @@ export const ImageScanGrid = ({
                       ) : (
                         <Download className="w-3.5 h-3.5" />
                       )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCardClick();
-                      }}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md text-[10px] text-[#A0A5B5] group-hover:text-[#A0E3E2] hover:bg-[#2B2D35] hover:text-[#A0E3E2] transition cursor-pointer sm:min-w-0 sm:px-1"
-                      title={t('unmatched.preview')}
-                      aria-label={t('unmatched.preview')}
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span className="hidden sm:inline">{t('unmatched.preview')}</span>
                     </button>
                   </div>
                 </div>
@@ -530,132 +406,13 @@ export const ImageScanGrid = ({
         )}
       </div>
 
-      {/* Click-to-Preview Modal Overlay rendered at document.body */}
-      {typeof document !== 'undefined' &&
-        selectedPreviewImage &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[9999] overflow-y-auto bg-black/85 p-2 backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:p-4"
-            onClick={() => setSelectedPreviewImage(null)}
-          >
-            <div
-              className="mx-auto flex min-h-[calc(100dvh-1rem)] w-full max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-[#3D404B] bg-[#1C1D22] shadow-2xl sm:min-h-0 sm:max-h-[90vh] sm:max-w-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#26272E] bg-[#16171B] px-4 py-3.5 sm:px-5">
-                <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-                  <Eye className="w-4 h-4 text-[#A0E3E2] shrink-0" />
-                  <div className="truncate">
-                    <h4 className="text-sm font-semibold text-white m-0">
-                      {t('unmatched.previewTitle')}
-                    </h4>
-                    <p className="text-[11px] text-[#8E929E] m-0 truncate">
-                      {selectedPreviewImage.filename}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedPreviewImage(null)}
-                  className="ml-3 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-[#8E929E] hover:bg-[#2B2D35] hover:text-white transition cursor-pointer"
-                  title={t('unmatched.close')}
-                  aria-label={t('unmatched.close')}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Modal Image View */}
-              <div className="min-h-0 max-h-[calc(100dvh-9rem)] flex-1 overflow-y-auto bg-[#121316] p-4 flex items-center justify-center sm:max-h-[60vh]">
-                {selectedPreviewImage.url ? (
-                  <img
-                    src={selectedPreviewImage.url}
-                    alt={selectedPreviewImage.filename}
-                    className="max-h-[60vh] max-w-full object-contain rounded-lg border border-[#2B2D35] shadow-md"
-                    onError={() => {
-                      const currentFilename = selectedPreviewImage.filename;
-                      const file = imageFiles?.find(
-                        (f) =>
-                          f.name === currentFilename ||
-                          f.name.toLowerCase().trim() ===
-                            currentFilename.toLowerCase().trim()
-                      );
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          if (typeof reader.result === 'string') {
-                            setSelectedPreviewImage((prev) =>
-                              prev
-                                ? { ...prev, url: reader.result as string }
-                                : null
-                            );
-                          }
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                ) : (
-                  <div className="text-center py-10 px-4 space-y-2 text-[#8E929E]">
-                    <ImageOff className="w-10 h-10 mx-auto opacity-50 text-[#8E929E]" />
-                    <p className="text-xs m-0">
-                      {selectedPreviewImage.filename}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Modal Footer with Barcode Badge */}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#26272E] bg-[#16171B] px-4 py-3 sm:px-5">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="text-xs text-[#8E929E]">បាកូដ:</span>
-                  {selectedPreviewImage.barcode ? (
-                    <span className="max-w-full break-all rounded border border-[#5C1D24] bg-[#461B21] px-2.5 py-0.5 font-mono text-sm font-bold text-[#FB7185]">
-                      {selectedPreviewImage.barcode}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-[#F59E0B] bg-[#3D2115] px-2.5 py-0.5 rounded border border-[#5C2B1D]">
-                      {t('unmatched.noBarcodeTag')}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleSavePreviewImage()}
-                    disabled={isPreviewSaving}
-                    className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md bg-[#461B21] border border-[#FB7185]/40 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#5C2028] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={t('unmatched.saveToGallery')}
-                  >
-                    {isPreviewSaving ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FB7185]" />
-                    ) : (
-                      <Download className="w-3.5 h-3.5 text-[#FB7185]" />
-                    )}
-                    <span>{t('unmatched.saveImage')}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPreviewImage(null)}
-                    className="min-h-11 shrink-0 rounded-md bg-[#24262E] px-3 py-1.5 text-xs font-medium text-[#D1D5DB] hover:bg-[#2D2F38] hover:text-white transition cursor-pointer"
-                  >
-                    {t('unmatched.close')}
-                  </button>
-                </div>
-
-                {/* Mobile guidance for iOS / iPhone users */}
-                <p className="w-full m-0 text-[11px] text-[#8E929E] italic text-center sm:hidden">
-                  {t('unmatched.iosHint')}
-                </p>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+      <ReceiptPreviewModal
+        preview={preview}
+        setPreview={setPreview}
+        imageFiles={imageFiles}
+        reconciliationId={reconciliationId}
+        onSaveError={setDownloadError}
+      />
     </div>
   );
 };

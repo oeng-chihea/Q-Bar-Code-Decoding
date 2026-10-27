@@ -1,5 +1,7 @@
 package com.excel.reconciler.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.List;
 
 public class BarcodeResult {
@@ -15,6 +17,12 @@ public class BarcodeResult {
     private String createDate; // ISO date (yyyy-MM-dd) read from the receipt's CREATED line
     private String createDateText; // the CREATED text as read, for messages
     private String createDateProblem; // NOT_FOUND, UNREADABLE or FUTURE_DATE when createDate is unusable
+    private String printedWaybill; // the waybill printed on the receipt, set only when it differs from the barcode
+    // The receipt's date checked as if the printed waybill were right, used if the Excel table backs it
+    @JsonIgnore
+    private String printedWaybillCreateDate;
+    @JsonIgnore
+    private String printedWaybillCreateDateProblem;
 
     public BarcodeResult() {
     }
@@ -124,5 +132,29 @@ public class BarcodeResult {
 
     public void setCreateDateProblem(String createDateProblem) {
         this.createDateProblem = createDateProblem;
+    }
+
+    public String getPrintedWaybill() {
+        return printedWaybill;
+    }
+
+    public void setPrintedWaybill(String printedWaybill) {
+        this.printedWaybill = printedWaybill;
+    }
+
+    public String getPrintedWaybillCreateDate() {
+        return printedWaybillCreateDate;
+    }
+
+    public void setPrintedWaybillCreateDate(String printedWaybillCreateDate) {
+        this.printedWaybillCreateDate = printedWaybillCreateDate;
+    }
+
+    public String getPrintedWaybillCreateDateProblem() {
+        return printedWaybillCreateDateProblem;
+    }
+
+    public void setPrintedWaybillCreateDateProblem(String printedWaybillCreateDateProblem) {
+        this.printedWaybillCreateDateProblem = printedWaybillCreateDateProblem;
     }
 }

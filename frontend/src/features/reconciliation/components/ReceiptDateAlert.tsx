@@ -30,7 +30,11 @@ export const ReceiptDateAlert = ({ scanResults }: ReceiptDateAlertProps) => {
             <li key={`${item.filename}-${index}`} className="break-words">
               <span className="font-mono">{item.filename}</span>
               {' — '}
-              {t(`receiptDate.problem.${item.problem}` as const,{ text: item.createDateText ?? '' })}
+              {t(`receiptDate.problem.${item.problem}` as const, {
+                text: item.createDateText ?? '',
+                barcode: item.decodedValue ?? '',
+                printed: item.printedWaybill ?? '',
+              })}
             </li>
           ))}
         </ul>

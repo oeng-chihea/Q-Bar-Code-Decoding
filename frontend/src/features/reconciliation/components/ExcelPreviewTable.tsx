@@ -2,11 +2,22 @@ import { useState } from 'react';
 import {
   FileSpreadsheet,
   Download,
-  Filter,
-  CheckCircle2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
-import type { ExcelRowPreview } from '@/features/reconciliation/model/types';
+import type {
+  BarcodeResult,
+  ExcelRowPreview,
+  UnmatchedWaybill,
+} from '@/features/reconciliation/model/types';
 import { downloadReconciliation } from '@/features/reconciliation/api/reconciliationApi';
+import { WaybillStatusBadge } from '@/features/reconciliation/components/WaybillStatusBadge';
+import { ReceiptPreviewModal } from '@/features/reconciliation/components/ReceiptPreviewModal';
+import { useReceiptPreview } from '@/features/reconciliation/hooks/useReceiptPreview';
+import { buildPreviewTableRows } from '@/features/reconciliation/utils/previewTableRows';
+import type { ReceiptPhoto } from '@/features/reconciliation/utils/previewTableRows';
+import { findReceiptFile } from '@/features/reconciliation/utils/receiptFiles';
+import { WAYBILL_TABLE_ID } from '@/features/reconciliation/utils/waybillTracking';
 import { useTranslation } from '@/shared/i18n/i18n';
 
 interface ExcelPreviewTableProps {
@@ -17,6 +28,10 @@ interface ExcelPreviewTableProps {
   matchedCount: number;
   reconciliationId: string;
   downloadFileName: string;
+  scanResults: BarcodeResult[];
+  imageFiles: File[];
+  unmatchedWaybills: UnmatchedWaybill[];
+  overdueAfterDays: number;
 }
 
 export const ExcelPreviewTable = ({
@@ -27,15 +42,19 @@ export const ExcelPreviewTable = ({
   matchedCount,
   reconciliationId,
   downloadFileName,
+  scanResults,
+  imageFiles,
+  unmatchedWaybills,
+  overdueAfterDays,
 }: ExcelPreviewTableProps) => {
   const { t } = useTranslation();
-  const [onlyMatched, setOnlyMatched] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const { preview, setPreview, openPreview } = useReceiptPreview();
 
-  const displayRows = onlyMatched
-    ? previewRows.filter((r) => r.matched)
-    : previewRows;
+  const showTracking = unmatchedWaybills.length > 0;
+  const tableRows = buildPreviewTableRows(previewRows, unmatchedWaybills, scanResults);
+  const fixedColumnCount = showTracking ? 4 : 2;
 
   const handleDownload = async () => {
     if (!reconciliationId || isDownloading) return;
@@ -50,8 +69,72 @@ export const ExcelPreviewTable = ({
     }
   };
 
+  const openPhoto = ({ item, imageIndex }: ReceiptPhoto, barcode: string) => {
+    openPreview({
+      url: item.previewUrl,
+      filename: item.filename,
+      barcode,
+      isFailed: false,
+      item,
+      imageIndex,
+      file: findReceiptFile(item, imageIndex, scanResults, imageFiles),
+    });
+  };
+
+  const renderViewButton = (photos: ReceiptPhoto[], barcode: string) => {
+    const [mainPhoto, ...repeatPhotos] = photos;
+    if (!mainPhoto) {
+      return (
+        <span
+          className="inline-flex min-h-11 min-w-11 items-center justify-center text-[#4A4D57]"
+          title={t('preview.noReceipt')}
+          aria-label={t('preview.noReceipt')}
+        >
+          <EyeOff className="w-3.5 h-3.5" />
+        </span>
+      );
+    }
+
+    return (
+      <div className="inline-flex items-center justify-center">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openPhoto(mainPhoto, barcode);
+          }}
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-[#A0A5B5] hover:bg-[#2B2D35] hover:text-[#A0E3E2] transition cursor-pointer"
+          title={t('preview.viewReceipt')}
+          aria-label={t('preview.viewReceipt')}
+        >
+          <Eye className="w-3.5 h-3.5" />
+        </button>
+        {repeatPhotos.map((photo, idx) => (
+          <button
+            key={photo.imageIndex}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openPhoto(photo, barcode);
+            }}
+            className="inline-flex min-h-11 items-center justify-center rounded-md px-1.5 text-[10px] font-semibold text-[#A0A5B5] hover:bg-[#2B2D35] hover:text-[#A0E3E2] transition cursor-pointer"
+            title={t('preview.repeatPhoto', { filename: photo.item.filename })}
+            aria-label={t('preview.repeatPhoto', { filename: photo.item.filename })}
+          >
+            +{idx + 1}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const emptyCell = <span className="text-[10px] text-[#737887] font-normal">&mdash;</span>;
+
   return (
-    <div className="min-w-0 bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-4 sm:p-5 text-left space-y-4">
+    <div
+      id={WAYBILL_TABLE_ID}
+      className="min-w-0 bg-[#1C1D22] border border-[#2B2D35] rounded-lg p-4 sm:p-5 text-left space-y-4"
+    >
       {/* Header Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#26272E] pb-4">
         <div className="flex min-w-0 items-start gap-2">
@@ -62,25 +145,12 @@ export const ExcelPreviewTable = ({
             </h3>
             <p className="break-words text-xs text-[#8E929E] m-0 mt-0.5">
               {t('preview.showing', { count: previewRows.length, matched: matchedCount })}
+              {showTracking && ` · ${t('preview.unmatchedWaybills', { count: unmatchedWaybills.length })}`}
             </p>
           </div>
         </div>
 
         <div className="flex w-full items-stretch gap-2 sm:w-auto">
-          {/* Toggle Filter */}
-          <button
-            type="button"
-            onClick={() => setOnlyMatched(!onlyMatched)}
-            className={`min-h-11 flex-1 px-3 py-1.5 rounded-md border text-xs font-medium transition cursor-pointer flex items-center justify-center gap-1.5 sm:flex-none ${
-              onlyMatched
-                ? 'bg-[#461B21] text-[#FB7185] border-[#5C2028]'
-                : 'bg-[#16171B] text-[#8E929E] border-[#2B2D35] hover:text-[#F3F4F6]'
-            }`}
-          >
-            <Filter className="w-3 h-3" />
-            {onlyMatched ? t('preview.showMatched') : t('preview.showAll')}
-          </button>
-
           {/* Download Action */}
           <button
             type="button"
@@ -105,9 +175,19 @@ export const ExcelPreviewTable = ({
               <th className="py-2.5 px-3.5 font-semibold w-12 text-[#737887] border-r border-[#2B2D35]">
                 #
               </th>
-              <th className="py-2.5 px-3.5 font-semibold w-24 border-r border-[#2B2D35]">
-                {t('preview.status')}
+              <th className="py-2.5 px-2 font-semibold w-16 text-center border-r border-[#2B2D35]">
+                {t('preview.colView')}
               </th>
+              {showTracking && (
+                <>
+                  <th className="py-2.5 px-3.5 font-semibold border-r border-[#2B2D35] whitespace-nowrap">
+                    {t('preview.colOver', { days: overdueAfterDays })}
+                  </th>
+                  <th className="py-2.5 px-3.5 font-semibold border-r border-[#2B2D35] whitespace-nowrap">
+                    {t('preview.colUnmatchedWaybill')}
+                  </th>
+                </>
+              )}
               {columns.map((col, idx) => {
                 const isTarget = col.toLowerCase() === matchedColumnName.toLowerCase();
                 return (
@@ -131,20 +211,56 @@ export const ExcelPreviewTable = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-[#24252B]">
-            {displayRows.length === 0 ? (
+            {tableRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length + 2}
+                  colSpan={columns.length + fixedColumnCount}
                   className="py-8 text-center text-[#737887] text-xs"
                 >
                   {t('preview.noRows')}
                 </td>
               </tr>
             ) : (
-              displayRows.map((row) => {
+              tableRows.map((tableRow) => {
+                if (tableRow.kind === 'waybill') {
+                  const { waybill } = tableRow;
+                  const isOverdue = waybill.status === 'OVERDUE';
+                  return (
+                    <tr
+                      key={tableRow.key}
+                      className={`transition text-[#D1D5DB] ${
+                        isOverdue ? 'bg-[#2A1519] hover:bg-[#33191E]' : 'hover:bg-[#1C1D22]'
+                      }`}
+                    >
+                      <td className="py-2 px-3.5 border-r border-[#24252B]" />
+                      <td className="py-0.5 px-2 text-center border-r border-[#24252B]">
+                        {renderViewButton(tableRow.photos, waybill.waybillNo)}
+                      </td>
+                      <td
+                        className="py-2 px-3.5 border-r border-[#24252B]"
+                        title={t('preview.waybillDates', { start: waybill.startDate, due: waybill.dueDate })}
+                      >
+                        <WaybillStatusBadge waybill={waybill} overdueAfterDays={overdueAfterDays} />
+                      </td>
+                      <td className="py-2 px-3.5 border-r border-[#24252B] whitespace-nowrap font-mono font-semibold">
+                        <span className={isOverdue ? 'text-[#FB7185]' : 'text-white'}>{waybill.waybillNo}</span>
+                        {!waybill.inThisUpload && (
+                          <span className="block text-[10px] font-sans font-normal text-[#737887]">
+                            {t('waybill.earlierUpload')}
+                          </span>
+                        )}
+                      </td>
+                      {columns.map((_, cIdx) => (
+                        <td key={cIdx} className="py-2.5 px-4 border-r border-[#24252B]" />
+                      ))}
+                    </tr>
+                  );
+                }
+
+                const { row } = tableRow;
                 return (
                   <tr
-                    key={row.rowIndex}
+                    key={tableRow.key}
                     className={`transition ${
                       row.matched
                         ? 'bg-[#331418]/60 text-[#FEE2E2] hover:bg-[#40181D] font-medium'
@@ -154,18 +270,15 @@ export const ExcelPreviewTable = ({
                     <td className="py-2 px-3.5 text-[#737887] font-mono border-r border-[#24252B]">
                       {row.rowIndex}
                     </td>
-                    <td className="py-2 px-3.5 border-r border-[#24252B]">
-                      {row.matched ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[#143827] text-[#34D399] border border-[#1E4D36]">
-                          <CheckCircle2 className="w-3 h-3" />
-                          {t('preview.matchRed')}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-[#737887] font-normal">
-                          &mdash;
-                        </span>
-                      )}
+                    <td className="py-0.5 px-2 text-center border-r border-[#24252B]">
+                      {renderViewButton(tableRow.photos, row.barcodeValue)}
                     </td>
+                    {showTracking && (
+                      <>
+                        <td className="py-2 px-3.5 border-r border-[#24252B]">{emptyCell}</td>
+                        <td className="py-2 px-3.5 border-r border-[#24252B]">{emptyCell}</td>
+                      </>
+                    )}
                     {columns.map((col, cIdx) => {
                       const val = row.cells[col] || '';
                       const isTarget = col.toLowerCase() === matchedColumnName.toLowerCase();
@@ -197,6 +310,14 @@ export const ExcelPreviewTable = ({
           {t('preview.previewing', { preview: previewRows.length, total: totalRows, matched: matchedCount })}
         </div>
       )}
+
+      <ReceiptPreviewModal
+        preview={preview}
+        setPreview={setPreview}
+        imageFiles={imageFiles}
+        reconciliationId={reconciliationId}
+        onSaveError={setDownloadError}
+      />
     </div>
   );
 };

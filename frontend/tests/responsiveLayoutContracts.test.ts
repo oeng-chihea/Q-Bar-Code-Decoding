@@ -68,7 +68,7 @@ test('unmatched results use a phone list and stretch controls', () => {
 });
 
 test('image preview fits a phone viewport and wraps its footer', () => {
-  const source = readSource('../src/features/reconciliation/components/ImageScanGrid.tsx');
+  const source = readSource('../src/features/reconciliation/components/ReceiptPreviewModal.tsx');
 
   assert.match(source, /max-w-\[calc\(100vw-2rem\)\]/);
   assert.match(source, /max-h-\[calc\(100dvh-9rem\)\]/);

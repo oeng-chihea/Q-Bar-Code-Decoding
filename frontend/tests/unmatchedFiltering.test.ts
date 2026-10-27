@@ -12,15 +12,14 @@ test('BarcodeResult interface includes optional matched flag', () => {
   assert.match(types, /matched\?: boolean;/);
 });
 
-test('ImageScanGrid uses createPortal at document.body for image preview modal', () => {
-  const compPath = fileURLToPath(new URL(
-    '../src/features/reconciliation/components/ImageScanGrid.tsx',
-    import.meta.url,
-  ));
-  const comp = readFileSync(compPath, 'utf8');
-  assert.match(comp, /createPortal\(/);
-  assert.match(comp, /document\.body/);
-  assert.match(comp, /isItemMatched/);
+test('receipt preview modal uses createPortal at document.body and ImageScanGrid reuses it', () => {
+  const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+  const modal = read('../src/features/reconciliation/components/ReceiptPreviewModal.tsx');
+  const grid = read('../src/features/reconciliation/components/ImageScanGrid.tsx');
+  assert.match(modal, /createPortal\(/);
+  assert.match(modal, /document\.body/);
+  assert.match(grid, /<ReceiptPreviewModal/);
+  assert.match(grid, /isItemMatched/);
 });
 
 test('unmatched filtering correctly ignores secondary barcodes when any code matches Excel', () => {

@@ -8,9 +8,7 @@ import { ImageScanGrid } from '@/features/reconciliation/components/ImageScanGri
 import { ExcelPreviewTable } from '@/features/reconciliation/components/ExcelPreviewTable';
 import { OverdueWaybillAlert } from '@/features/reconciliation/components/OverdueWaybillAlert';
 import { ReceiptDateAlert } from '@/features/reconciliation/components/ReceiptDateAlert';
-import { UnmatchedWaybillTable } from '@/features/reconciliation/components/UnmatchedWaybillTable';
 import { WAYBILL_TABLE_ID } from '@/features/reconciliation/utils/waybillTracking';
-import type { WaybillFilter } from '@/features/reconciliation/utils/waybillTracking';
 import type { ReconciliationResponse } from '@/features/reconciliation/model/types';
 import {
   getReconciliationResult,
@@ -28,18 +26,13 @@ export function App() {
   const [results, setResults] = useState<ReconciliationResponse | null>(null);
   const [reconciliationId, setReconciliationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Changing the key reopens the tracking table on the requested filter
-  const [waybillView, setWaybillView] = useState<{ key: number; filter?: WaybillFilter }>({ key: 0 });
 
   const waybills = results?.unmatchedWaybills ?? [];
   const overdueAfterDays = results?.overdueAfterDays ?? 0;
   const showWaybillTracking = results?.trackingAvailable === true && waybills.length > 0;
 
   const handleViewOverdue = () => {
-    setWaybillView((view) => ({ key: view.key + 1, filter: 'overdue' }));
-    requestAnimationFrame(() => {
-      document.getElementById(WAYBILL_TABLE_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    document.getElementById(WAYBILL_TABLE_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const handleStartReconcile = async () => {
@@ -163,23 +156,18 @@ export function App() {
               matchedCount={results.matchedRowsCount}
               reconciliationId={reconciliationId || ''}
               downloadFileName={results.downloadFileName}
+              scanResults={results.scanResults}
+              imageFiles={imageFiles}
+              unmatchedWaybills={showWaybillTracking ? waybills : []}
+              overdueAfterDays={overdueAfterDays}
             />
-
-            {/* Unmatched waybills tracked over time */}
-            {showWaybillTracking && (
-              <UnmatchedWaybillTable
-                key={`${reconciliationId}-${waybillView.key}`}
-                waybills={waybills}
-                overdueAfterDays={overdueAfterDays}
-                initialFilter={waybillView.filter}
-              />
-            )}
 
             {/* Unmatched Barcode Cards */}
             <ImageScanGrid
               scanResults={results.scanResults}
               matchedCodes={results.matchedCodes}
               imageFiles={imageFiles}
+              previewRows={results.previewRows}
               reconciliationId={reconciliationId || ''}
               unmatchedWaybills={waybills}
               overdueAfterDays={overdueAfterDays}

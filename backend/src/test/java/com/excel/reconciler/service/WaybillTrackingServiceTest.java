@@ -196,7 +196,7 @@ class WaybillTrackingServiceTest {
                 .orElseThrow();
     }
 
-    /** Mirrors the SQL semantics of {@link JdbcWaybillTrackingStore}. */
+    /** Mirrors the SQL semantics of {@link com.excel.reconciler.jdbc.JdbcWaybillTrackingStore}. */
     private static class InMemoryStore implements WaybillTrackingStore {
         private record Entry(String waybillNo, LocalDate firstSeen, boolean open) {
         }

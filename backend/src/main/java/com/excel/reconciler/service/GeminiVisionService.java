@@ -35,9 +35,10 @@ public class GeminiVisionService {
     // Tried in this order after the configured model. Every model has its own daily quota, so listing
     // different models adds free requests; listing an alias of one already tried would only repeat it.
     private static final List<String> FALLBACK_MODELS =
-            List.of("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash");
+            List.of("gemini-3.5-flash-lite", "gemini-3.1-flash-lite");
     // After a model reports its daily quota used up it is skipped for this long, then tried once again
     private static final Duration QUOTA_RECHECK_INTERVAL = Duration.ofMinutes(15);
+    private static final Duration BUSY_COOLDOWN = Duration.ofSeconds(60);
     private static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
     @Value("${gemini.api.key:}")
@@ -55,17 +56,14 @@ public class GeminiVisionService {
     @Value("${gemini.api.media-resolution:}")
     private String mediaResolution = "";
 
-    // How often a failed receipt date read is tried (first try included) and the base wait between tries
-    @Value("${gemini.api.date-read-attempts:3}")
-    private int dateReadAttempts = 3;
-
-    @Value("${gemini.api.date-read-retry-delay-ms:1500}")
-    private long dateReadRetryDelayMs = 1500;
+    @Value("${gemini.api.date-read-timeout-seconds:30}")
+    private int dateReadTimeoutSeconds = 30;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final Executor executor;
     private final Map<String, Instant> quotaExhaustedUntil = new ConcurrentHashMap<>();
+    private final Map<String, Instant> busyUntil = new ConcurrentHashMap<>();
 
     public record BarcodeImage(byte[] imageBytes, String mimeType) {
     }
@@ -169,106 +167,87 @@ public class GeminiVisionService {
      * when {@code failed} is false. {@code quotaExhausted} marks a failure that will not clear until the
      * daily quota resets.
      */
-    public record ReceiptDateRead(String text, boolean failed, boolean quotaExhausted) {
+    public record ReceiptDateRead(String text, String waybillNo, boolean failed, boolean quotaExhausted) {
         public static ReceiptDateRead found(String text) {
-            return new ReceiptDateRead(text == null ? "" : text, false, false);
+            return found(text, "");
+        }
+
+        public static ReceiptDateRead found(String text, String waybillNo) {
+            return new ReceiptDateRead(text == null ? "" : text, waybillNo == null ? "" : waybillNo, false, false);
         }
 
         public static ReceiptDateRead failure() {
-            return new ReceiptDateRead("", true, false);
+            return new ReceiptDateRead("", "", true, false);
         }
 
         /** Failed because the free-tier daily quota is used up, which retrying cannot fix. */
         public static ReceiptDateRead quotaUsedUp() {
-            return new ReceiptDateRead("", true, true);
+            return new ReceiptDateRead("", "", true, true);
         }
     }
 
-    /**
-     * Reads the date printed next to the "CREATED" label on a receipt, exactly as printed
-     * (for example "Oct 18, 2026, 02:29 PM"). A failed request is retried with a growing wait, because under
-     * load the free tier answers some requests with 429/503 that succeed a moment later.
-     */
     public ReceiptDateRead extractReceiptCreatedText(byte[] imageBytes, String mimeType) {
         if (imageBytes == null || imageBytes.length == 0) {
             return ReceiptDateRead.found("");
         }
-
-        String prompt = """
-                This image is a printed parcel receipt photographed or scanned.
-                Find the line labelled "CREATED" and return the date and time printed next to it,
-                exactly as printed, for example "Oct 18, 2026, 02:29 PM".
-                Ignore any hand-drawn marks or circles around it.
-                If there is no "CREATED" label with a date, return an empty string.
-                Never guess, and never return any other date or number from the receipt.
-                """;
-
-        Map<String, Object> schema = Map.of(
-                "type", "OBJECT",
-                "properties", Map.of("createdText", Map.of("type", "STRING")),
-                "required", List.of("createdText")
-        );
-
-        int attempts = Math.max(1, dateReadAttempts);
-        for (int attempt = 1; attempt <= attempts; attempt++) {
-            JsonResponse response = generateJson(imageBytes, mimeType, prompt, schema, null);
-            if (response.isSuccessful()) {
-                try {
-                    return ReceiptDateRead.found(
-                            objectMapper.readTree(response.content()).path("createdText").asText("").trim());
-                } catch (Exception e) {
-                    log.debug("Gemini receipt date response parse failed: {}", e.getMessage());
-                }
-            } else if (response.dailyQuotaExhausted()) {
-                log.warn("Gemini daily quota is used up for every model; not retrying the receipt date read");
-                return ReceiptDateRead.quotaUsedUp();
-            } else {
-                log.warn("Gemini receipt date extraction failed with status {} (attempt {}/{}): {}",
-                        response.statusCode(), attempt, attempts, response.errorMessage());
-            }
-
-            if (attempt < attempts && !pause(dateReadRetryDelayMs * attempt)) {
-                break;
-            }
-        }
-        return ReceiptDateRead.failure();
+        return extractReceiptCreatedBatch(List.of(new BarcodeImage(imageBytes, mimeType))).get(0);
     }
 
-    private static boolean pause(long millis) {
-        if (millis <= 0) {
-            return true;
-        }
-        try {
-            Thread.sleep(millis);
-            return true;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
-    }
-
-    /**
-     * Reads the CREATED date of several receipts concurrently, preserving the input order.
-     */
-    public List<ReceiptDateRead> extractReceiptCreatedParallel(List<BarcodeImage> images) {
+    public List<ReceiptDateRead> extractReceiptCreatedBatch(List<BarcodeImage> images) {
         if (images == null || images.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<CompletableFuture<ReceiptDateRead>> futures = images.stream()
-                .map(image -> CompletableFuture.supplyAsync(() -> {
-                    try {
-                        return extractReceiptCreatedText(image.imageBytes(), image.mimeType());
-                    } catch (Exception e) {
-                        log.warn("Gemini receipt date extraction error for image: {}", e.getMessage());
-                        return ReceiptDateRead.failure();
-                    }
-                }, executor))
-                .toList();
+        String prompt = """
+                The following %d images are printed parcel receipts, photographed or scanned, each labelled
+                "Receipt 1", "Receipt 2" and so on. For every receipt, return one entry with:
+                - receipt: the receipt's number from its label.
+                - createdText: the date and time printed next to the line labelled "CREATED", exactly as printed,
+                  for example "Oct 18, 2026, 02:29 PM". Ignore any hand-drawn marks or circles around it.
+                  If there is no "CREATED" label with a date, return an empty string.
+                - waybillNo: the waybill (tracking) number printed on that receipt as text, for example
+                  "J01419454153", exactly as printed. If it is not printed or not readable, return an empty string.
+                Read each receipt only from its own image. Never guess, and never return any other date or number.
+                """.formatted(images.size());
 
-        return futures.stream()
-                .map(CompletableFuture::join)
-                .toList();
+        Map<String, Object> entry = Map.of(
+                "type", "OBJECT",
+                "properties", Map.of(
+                        "receipt", Map.of("type", "INTEGER"),
+                        "createdText", Map.of("type", "STRING"),
+                        "waybillNo", Map.of("type", "STRING")),
+                "required", List.of("receipt", "createdText", "waybillNo")
+        );
+        Map<String, Object> schema = Map.of(
+                "type", "OBJECT",
+                "properties", Map.of("receipts", Map.of("type", "ARRAY", "items", entry)),
+                "required", List.of("receipts")
+        );
+
+        JsonResponse response = generateJson(images, prompt, schema, null, dateReadTimeoutSeconds);
+        if (response.isSuccessful()) {
+            try {
+                List<ReceiptDateRead> readings = new ArrayList<>(
+                        Collections.nCopies(images.size(), ReceiptDateRead.failure()));
+                for (JsonNode node : objectMapper.readTree(response.content()).path("receipts")) {
+                    int index = images.size() == 1 ? 0 : node.path("receipt").asInt(0) - 1;
+                    if (index >= 0 && index < images.size()) {
+                        readings.set(index, ReceiptDateRead.found(
+                                node.path("createdText").asText("").trim(), node.path("waybillNo").asText("").trim()));
+                    }
+                }
+                return readings;
+            } catch (Exception e) {
+                log.debug("Gemini receipt date response parse failed: {}", e.getMessage());
+            }
+        } else if (response.dailyQuotaExhausted()) {
+            log.warn("Gemini daily quota is used up for every model; not reading the receipt dates");
+            return Collections.nCopies(images.size(), ReceiptDateRead.quotaUsedUp());
+        } else {
+            log.warn("Gemini receipt date extraction for {} receipt(s) failed with status {}: {}",
+                    images.size(), response.statusCode(), response.errorMessage());
+        }
+        return Collections.nCopies(images.size(), ReceiptDateRead.failure());
     }
 
     /**
@@ -302,6 +281,17 @@ public class GeminiVisionService {
      * Retries transient 503 (high demand) and 429 errors with progressive backoff.
      */
     public JsonResponse generateJson(byte[] imageBytes, String mimeType, String prompt, Map<String, Object> responseSchema, String systemInstruction) {
+        return generateJson(imageBytes, mimeType, prompt, responseSchema, systemInstruction, timeoutSeconds);
+    }
+
+    public JsonResponse generateJson(byte[] imageBytes, String mimeType, String prompt, Map<String, Object> responseSchema,
+                                     String systemInstruction, int requestTimeoutSeconds) {
+        return generateJson(List.of(new BarcodeImage(imageBytes, mimeType)), prompt, responseSchema,
+                systemInstruction, requestTimeoutSeconds);
+    }
+
+    public JsonResponse generateJson(List<BarcodeImage> images, String prompt, Map<String, Object> responseSchema,
+                                     String systemInstruction, int requestTimeoutSeconds) {
         String activeKey = (apiKey == null ? "" : apiKey.trim());
         if (activeKey.isEmpty()) {
             return new JsonResponse(401, "", "Gemini API key is missing or not configured.", null);
@@ -309,11 +299,11 @@ public class GeminiVisionService {
 
         try {
             String requestJson = objectMapper.writeValueAsString(
-                    buildRequestBody(imageBytes, mimeType, prompt, responseSchema, systemInstruction, true));
+                    buildRequestBody(images, prompt, responseSchema, systemInstruction, true));
             // Sent instead when a model rejects the media resolution setting
             String plainRequestJson = hasMediaResolution()
                     ? objectMapper.writeValueAsString(
-                            buildRequestBody(imageBytes, mimeType, prompt, responseSchema, systemInstruction, false))
+                            buildRequestBody(images, prompt, responseSchema, systemInstruction, false))
                     : null;
 
             List<String> modelsToTry = new ArrayList<>();
@@ -339,7 +329,13 @@ public class GeminiVisionService {
                 return new JsonResponse(429, "",
                         "Gemini free-tier daily quota is used up for every configured model.", null, true);
             }
-            modelsToTry = usable;
+            List<String> answering = new ArrayList<>();
+            List<String> busy = new ArrayList<>();
+            for (String candidate : usable) {
+                (isBusy(candidate) ? busy : answering).add(candidate);
+            }
+            answering.addAll(busy);
+            modelsToTry = answering;
 
             HttpResponse<String> response = null;
             String usedModel = null;
@@ -347,16 +343,17 @@ public class GeminiVisionService {
             for (String targetModel : modelsToTry) {
                 String targetUrl = String.format("%s/%s:generateContent", configuredBaseUrl(), targetModel);
                 try {
-                    response = httpClient.send(buildHttpRequest(targetUrl, activeKey, requestJson),
+                    response = httpClient.send(buildHttpRequest(targetUrl, activeKey, requestJson, requestTimeoutSeconds),
                             HttpResponse.BodyHandlers.ofString());
                     if (response.statusCode() == 400 && plainRequestJson != null) {
                         log.warn("Gemini model {} rejected media resolution {}. Retrying without it...",
                                 targetModel, mediaResolution);
-                        response = httpClient.send(buildHttpRequest(targetUrl, activeKey, plainRequestJson),
+                        response = httpClient.send(buildHttpRequest(targetUrl, activeKey, plainRequestJson, requestTimeoutSeconds),
                                 HttpResponse.BodyHandlers.ofString());
                     }
                     if (response.statusCode() >= 200 && response.statusCode() < 300) {
                         usedModel = targetModel;
+                        busyUntil.remove(targetModel);
                         break;
                     }
 
@@ -365,6 +362,9 @@ public class GeminiVisionService {
                         quotaExhaustedUntil.put(targetModel, Instant.now().plus(QUOTA_RECHECK_INTERVAL));
                     } else {
                         otherFailures++;
+                        if (isBusyStatus(response.statusCode())) {
+                            markBusy(targetModel);
+                        }
                     }
 
                     // On 503 (High demand) or 404/429, instantly failover to next model without wasting time retrying
@@ -375,12 +375,13 @@ public class GeminiVisionService {
                     }
                 } catch (HttpTimeoutException e) {
                     otherFailures++;
+                    markBusy(targetModel);
                     if (modelsToTry.indexOf(targetModel) < modelsToTry.size() - 1) {
                         String fallbackModel = modelsToTry.get(modelsToTry.indexOf(targetModel) + 1);
                         log.warn("Gemini model {} timed out after {}s. Instantly failing over to fallback model {}...",
-                                targetModel, timeoutSeconds, fallbackModel);
+                                targetModel, requestTimeoutSeconds, fallbackModel);
                     } else {
-                        log.warn("Gemini model {} timed out after {}s", targetModel, timeoutSeconds);
+                        log.warn("Gemini model {} timed out after {}s", targetModel, requestTimeoutSeconds);
                     }
                 } catch (Exception e) {
                     otherFailures++;
@@ -416,19 +417,31 @@ public class GeminiVisionService {
     Map<String, Object> buildRequestBody(byte[] imageBytes, String mimeType, String prompt,
                                          Map<String, Object> responseSchema, String systemInstruction,
                                          boolean includeMediaResolution) {
-        String resolvedMimeType = (mimeType == null || !mimeType.startsWith("image/")) ? "image/jpeg" : mimeType;
-        String base64Image = Base64.getEncoder().encodeToString(imageBytes);
+        return buildRequestBody(List.of(new BarcodeImage(imageBytes, mimeType)), prompt, responseSchema,
+                systemInstruction, includeMediaResolution);
+    }
 
-        Map<String, Object> textPart = Map.of("text", prompt);
-        Map<String, Object> inlineData = Map.of(
-                "mime_type", resolvedMimeType,
-                "data", base64Image
-        );
-        Map<String, Object> imagePart = Map.of("inline_data", inlineData);
+    Map<String, Object> buildRequestBody(List<BarcodeImage> images, String prompt,
+                                         Map<String, Object> responseSchema, String systemInstruction,
+                                         boolean includeMediaResolution) {
+        List<Map<String, Object>> parts = new ArrayList<>();
+        parts.add(Map.of("text", prompt));
+        for (int i = 0; i < images.size(); i++) {
+            BarcodeImage image = images.get(i);
+            String mimeType = image.mimeType();
+            String resolvedMimeType = (mimeType == null || !mimeType.startsWith("image/")) ? "image/jpeg" : mimeType;
+            if (images.size() > 1) {
+                parts.add(Map.of("text", "Receipt " + (i + 1) + ":"));
+            }
+            parts.add(Map.of("inline_data", Map.of(
+                    "mime_type", resolvedMimeType,
+                    "data", Base64.getEncoder().encodeToString(image.imageBytes())
+            )));
+        }
 
         Map<String, Object> userContent = Map.of(
                 "role", "user",
-                "parts", List.of(textPart, imagePart)
+                "parts", parts
         );
 
         Map<String, Object> generationConfig = new LinkedHashMap<>();
@@ -452,12 +465,12 @@ public class GeminiVisionService {
         return requestBody;
     }
 
-    private HttpRequest buildHttpRequest(String targetUrl, String apiKey, String requestJson) {
+    private HttpRequest buildHttpRequest(String targetUrl, String apiKey, String requestJson, int requestTimeoutSeconds) {
         return HttpRequest.newBuilder()
                 .uri(URI.create(targetUrl))
                 .header("Content-Type", "application/json")
                 .header("x-goog-api-key", apiKey)
-                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .timeout(Duration.ofSeconds(Math.max(1, requestTimeoutSeconds)))
                 .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                 .build();
     }
@@ -472,6 +485,26 @@ public class GeminiVisionService {
         }
         quotaExhaustedUntil.remove(model, until);
         return false;
+    }
+
+    private boolean isBusy(String model) {
+        Instant until = busyUntil.get(model);
+        if (until == null) {
+            return false;
+        }
+        if (Instant.now().isBefore(until)) {
+            return true;
+        }
+        busyUntil.remove(model, until);
+        return false;
+    }
+
+    private void markBusy(String model) {
+        busyUntil.put(model, Instant.now().plus(BUSY_COOLDOWN));
+    }
+
+    private static boolean isBusyStatus(int statusCode) {
+        return statusCode == 429 || statusCode == 500 || statusCode == 503 || statusCode == 504;
     }
 
     /** A 429 for the per-day quota, which unlike a per-minute 429 does not clear within the next few minutes. */

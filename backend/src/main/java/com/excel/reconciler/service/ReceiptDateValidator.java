@@ -22,7 +22,8 @@ public final class ReceiptDateValidator {
         /** The read itself failed (rate limit, busy server, timeout), so nothing is known about the receipt. */
         READ_FAILED,
         /** The free-tier daily request quota is used up, so reading dates cannot work until it resets. */
-        QUOTA_EXHAUSTED
+        QUOTA_EXHAUSTED,
+        WAYBILL_MISMATCH
     }
 
     public record Result(String rawText, LocalDate date, Problem problem) {

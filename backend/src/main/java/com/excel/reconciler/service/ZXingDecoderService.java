@@ -64,6 +64,34 @@ public class ZXingDecoderService {
         return new ArrayList<>(uniqueResults.values());
     }
 
+    /**
+     * Every value any candidate image decodes to, including the full-size photo and its crops, without
+     * stopping at the first hit. Slower than {@link #decode}, so it is only used to double-check a doubtful
+     * read: a creased label can be misread on the downscaled photo and still pass the Code 128 checksum.
+     */
+    public Set<String> decodeEveryCandidate(byte[] imageBytes) {
+        Map<String, Result> uniqueResults = new LinkedHashMap<>();
+        try (InputStream is = new ByteArrayInputStream(imageBytes)) {
+            BufferedImage original = ImageIO.read(is);
+            if (original == null) {
+                return Set.of();
+            }
+
+            List<BufferedImage> candidateImages = new ArrayList<>(generateCandidateImages(original));
+            if (original.getWidth() > MAX_NORMALIZED_DIMENSION || original.getHeight() > MAX_NORMALIZED_DIMENSION) {
+                // The fast pass only crops the downscaled photo
+                candidateImages.add(crop(original, 0.05, 0.05, 0.90, 0.60));
+                candidateImages.add(crop(original, 0.05, 0.35, 0.90, 0.60));
+            }
+            for (BufferedImage candidate : candidateImages) {
+                collectResults(candidate, false, uniqueResults);
+            }
+        } catch (Exception e) {
+            log.debug("ZXing re-check exception: {}", e.getMessage());
+        }
+        return new LinkedHashSet<>(uniqueResults.keySet());
+    }
+
     private List<BufferedImage> generateCandidateImages(BufferedImage src) {
         List<BufferedImage> list = new ArrayList<>();
         int w = src.getWidth();

@@ -28,6 +28,9 @@ gemini:
     model: ${GEMINI_API_MODEL:gemini-3.5-flash-lite}
     url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta/models}
     timeout-seconds: ${GEMINI_API_TIMEOUT_SECONDS:40}
+    date-read-batch-size: ${GEMINI_DATE_READ_BATCH_SIZE:6}
+    date-read-timeout-seconds: ${GEMINI_DATE_READ_TIMEOUT_SECONDS:30}
+    date-read-budget-seconds: ${GEMINI_DATE_READ_BUDGET_SECONDS:60}
     # How closely Gemini looks at each image; HIGH helps with small digits such as dates. Leave empty to use the model default
     media-resolution: ${GEMINI_MEDIA_RESOLUTION:MEDIA_RESOLUTION_HIGH}
 

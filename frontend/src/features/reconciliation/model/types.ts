@@ -13,7 +13,9 @@ export interface BarcodeResult {
   // The receipt's CREATED date (yyyy-MM-dd); createDateProblem is set instead when it is missing or invalid
   createDate?: string;
   createDateText?: string;
-  createDateProblem?: 'NOT_FOUND' | 'UNREADABLE' | 'FUTURE_DATE' | 'READ_FAILED' | 'QUOTA_EXHAUSTED';
+  createDateProblem?: 'NOT_FOUND' | 'UNREADABLE' | 'FUTURE_DATE' | 'READ_FAILED' | 'QUOTA_EXHAUSTED' | 'WAYBILL_MISMATCH';
+  // The waybill printed on the receipt, set only when it still differs from the barcode (WAYBILL_MISMATCH)
+  printedWaybill?: string;
 }
 
 export interface UnmatchedImageDownload {

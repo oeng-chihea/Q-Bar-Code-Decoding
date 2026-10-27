@@ -4,6 +4,7 @@ import com.excel.reconciler.model.BarcodeResult;
 import com.excel.reconciler.model.UnmatchedWaybill;
 import com.excel.reconciler.model.WaybillStatus;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.ByteArrayInputStream;
@@ -84,7 +85,7 @@ class ReconciliationServiceTest {
                 service.reconcile(barcodeImage, List.of(), "Barcode", false, "rec-1"));
 
         assertEquals("Barcode images are not supported in the Excel section.", error.getMessage());
-        verifyNoInteractions(barcodeDecoder, highlighter);
+        verifyNoInteractions(highlighter);
     }
 
     @Test
@@ -183,6 +184,74 @@ class ReconciliationServiceTest {
 
         assertArrayEquals(new byte[]{4, 5}, Base64.getDecoder().decode(response.getHighlightedExcelBase64()));
         assertFalse(response.isTrackingAvailable());
+    }
+
+    private static BarcodeResult misreadReceipt(String barcode, String printed) {
+        BarcodeResult result = new BarcodeResult("photo_12.jpg", barcode, List.of(barcode), "ZXING", true, "CODE_128", null);
+        result.setCreateDateText("Oct 6, 2026, 10:07 AM");
+        result.setCreateDateProblem("WAYBILL_MISMATCH");
+        result.setPrintedWaybill(printed);
+        result.setPrintedWaybillCreateDate("2026-10-06");
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ArgumentCaptor<Set<String>> reconcileWithTable(BarcodeResult scan, List<List<String>> rows) throws Exception {
+        BarcodeDecoderService barcodeDecoder = mock(BarcodeDecoderService.class);
+        ExcelHighlightService highlighter = mock(ExcelHighlightService.class);
+        ExcelImageExtractorService extractor = mock(ExcelImageExtractorService.class);
+        MockMultipartFile tableImage = new MockMultipartFile("excelFile", "inventory.png", "image/png", new byte[]{1});
+
+        when(extractor.processExcelImage(tableImage)).thenReturn(
+                new ExcelImageExtractorService.ExtractedExcelData(
+                        true, false, null, "Sheet", List.of("Waybill Number"), rows, new byte[]{1, 2, 3}));
+        when(barcodeDecoder.decodeBatch(any())).thenReturn(List.of(scan));
+        when(highlighter.findMatchingDecodedCode(any(), anyMap())).thenCallRealMethod();
+        when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
+                .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
+                        new byte[]{4, 5}, rows.size(), 1, "Waybill Number", "Sheet",
+                        List.of("Waybill Number"), Set.of("J01421594677"), Collections.emptyList()));
+
+        newService(barcodeDecoder, highlighter, extractor)
+                .reconcile(tableImage, List.of(tableImage), "Waybill Number", false, "rec-1");
+
+        ArgumentCaptor<Set<String>> codes = ArgumentCaptor.forClass(Set.class);
+        verify(highlighter).highlightMatches(any(ByteArrayInputStream.class), codes.capture(), any(), eq(false), anyMap());
+        return codes;
+    }
+
+    @Test
+    void aReceiptWhoseBarcodeIsInNoRowUsesItsPrintedWaybillAndDate() throws Exception {
+        BarcodeResult scan = misreadReceipt("J00521590777", "J01421594677");
+
+        ArgumentCaptor<Set<String>> codes = reconcileWithTable(scan, List.of(List.of("4", "J01419454153"), List.of("5", "J01421594677")));
+
+        assertEquals(Set.of("J01421594677"), codes.getValue());
+        assertEquals("J01421594677", scan.getDecodedValue());
+        assertEquals("2026-10-06", scan.getCreateDate());
+        assertEquals(null, scan.getCreateDateProblem());
+        assertTrue(scan.isMatched());
+    }
+
+    @Test
+    void aReceiptWhoseBarcodeIsInTheTableKeepsItsBarcodeAndTheMismatchWarning() throws Exception {
+        BarcodeResult scan = misreadReceipt("J01419454153", "J01421594677");
+
+        ArgumentCaptor<Set<String>> codes = reconcileWithTable(scan, List.of(List.of("4", "J01419454153"), List.of("5", "J01421594677")));
+
+        assertEquals(Set.of("J01419454153"), codes.getValue());
+        assertEquals(null, scan.getCreateDate());
+        assertEquals("WAYBILL_MISMATCH", scan.getCreateDateProblem());
+    }
+
+    @Test
+    void aPrintedWaybillThatIsInNoRowIsNotUsed() throws Exception {
+        BarcodeResult scan = misreadReceipt("J00521590777", "J01421594677");
+
+        ArgumentCaptor<Set<String>> codes = reconcileWithTable(scan, List.of(List.of("4", "J01419454153")));
+
+        assertEquals(Set.of("J00521590777"), codes.getValue());
+        assertEquals("WAYBILL_MISMATCH", scan.getCreateDateProblem());
     }
 
     @Test

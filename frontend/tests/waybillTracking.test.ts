@@ -2,15 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import {
-  countWaybills,
-  filterWaybills,
-  findWaybill,
-  pickInitialFilter,
-} from '../src/features/reconciliation/utils/waybillTracking.ts';
+import { findWaybill } from '../src/features/reconciliation/utils/waybillTracking.ts';
 import { translate } from '../src/shared/i18n/i18n.ts';
 
-type Waybill = Parameters<typeof filterWaybills>[0][number];
+type Waybill = Parameters<typeof findWaybill>[0][number];
 
 const waybill = (overrides: Partial<Waybill>): Waybill => ({
   waybillNo: 'J0001',
@@ -31,22 +26,6 @@ const waybills = [
   waybill({ waybillNo: 'OLD-2', status: 'OVERDUE', daysOpen: 7, daysLeft: 0, overdueDays: 1, inThisUpload: true }),
 ];
 
-test('filters waybills by this upload, everything open, and overdue only', () => {
-  assert.deepEqual(filterWaybills(waybills, 'thisUpload').map((w) => w.waybillNo), ['NEW-1', 'OLD-2']);
-  assert.deepEqual(filterWaybills(waybills, 'overdue').map((w) => w.waybillNo), ['OLD-1', 'OLD-2']);
-  assert.equal(filterWaybills(waybills, 'allOpen').length, 4);
-});
-
-test('counts waybills for every filter', () => {
-  assert.deepEqual(countWaybills(waybills), { thisUpload: 2, allOpen: 4, overdue: 2 });
-  assert.deepEqual(countWaybills([]), { thisUpload: 0, allOpen: 0, overdue: 0 });
-});
-
-test('opens on this upload, or on everything open when this upload has no unmatched waybills', () => {
-  assert.equal(pickInitialFilter({ thisUpload: 2, allOpen: 4, overdue: 2 }), 'thisUpload');
-  assert.equal(pickInitialFilter({ thisUpload: 0, allOpen: 3, overdue: 1 }), 'allOpen');
-});
-
 test('finds a tracked waybill for a scanned code ignoring case and spaces', () => {
   assert.equal(findWaybill(waybills, '  old-1 ')?.waybillNo, 'OLD-1');
   assert.equal(findWaybill(waybills, 'UNKNOWN'), undefined);
@@ -61,7 +40,7 @@ test('translates the waybill tracking labels in Khmer with the configured day li
   );
   assert.equal(translate('waybill.statusOnTrack', { days: 2 }), 'នៅសល់ 2 ថ្ងៃ');
   assert.equal(translate('waybill.statusOverdue', { limit: 6, days: 7 }), 'លើស 6 ថ្ងៃ (+7)');
-  assert.equal(translate('waybill.colOver', { days: 6 }), 'លើស 6 ថ្ងៃ');
+  assert.equal(translate('preview.colOver', { days: 6 }), 'Over 6 days');
 });
 
 test('models optional tracking fields so older backends without a database still work', () => {
@@ -78,5 +57,6 @@ test('shows tracking only when the backend reports it is available and has waybi
   const app = readFileSync(fileURLToPath(new URL('../src/app/App.tsx', import.meta.url)), 'utf8');
   assert.match(app, /results\?\.trackingAvailable === true && waybills\.length > 0/);
   assert.match(app, /<OverdueWaybillAlert/);
-  assert.match(app, /<UnmatchedWaybillTable/);
+  assert.match(app, /unmatchedWaybills=\{showWaybillTracking \? waybills : \[\]\}/);
+  assert.doesNotMatch(app, /UnmatchedWaybillTable/);
 });

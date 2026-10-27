@@ -12,10 +12,18 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 @Service
 public class ReconciliationService {
     private static final Logger log = LoggerFactory.getLogger(ReconciliationService.class);
+    private static final Executor PHOTO_DECODE_EXECUTOR = task -> {
+        Thread thread = new Thread(task, "photo-decode");
+        thread.setDaemon(true);
+        thread.start();
+    };
 
     private final BarcodeDecoderService barcodeDecoderService;
     private final ExcelHighlightService excelHighlightService;
@@ -48,6 +56,10 @@ public class ReconciliationService {
 
         SpreadsheetFileValidator.requireSupported(excelFile);
 
+        // 1. Decode all images in parallel
+        CompletableFuture<List<BarcodeResult>> photoDecode = CompletableFuture.supplyAsync(
+                () -> barcodeDecoderService.decodeBatch(imageFiles), PHOTO_DECODE_EXECUTOR);
+
         ExcelImageExtractorService.ExtractedExcelData extracted =
                 excelImageExtractorService.processExcelImage(excelFile);
         byte[] workbookBytes = extracted.getExcelBytes();
@@ -56,8 +68,8 @@ public class ReconciliationService {
         }
         String excelSourceType = "EXCEL_TABLE_IMAGE";
 
-        // 1. Decode all images in parallel
-        List<BarcodeResult> scanResults = barcodeDecoderService.decodeBatch(imageFiles);
+        List<BarcodeResult> scanResults = awaitPhotoDecode(photoDecode);
+        adoptPrintedWaybills(scanResults, extracted.getRows());
 
         // 2. Aggregate all barcodes and SKUs across all uploaded images/sheets
         Set<String> allDecodedCodes = new LinkedHashSet<>();
@@ -227,6 +239,48 @@ public class ReconciliationService {
         }
     }
 
+    /**
+     * A receipt whose printed waybill differs from its barcode, even after the barcode was scanned again,
+     * takes the printed waybill (and with it the receipt's date) when the table has that waybill and none
+     * of the barcode's values: the barcode was then misread, since it points at no row at all.
+     */
+    private void adoptPrintedWaybills(List<BarcodeResult> scanResults, List<List<String>> rows) {
+        for (BarcodeResult res : scanResults) {
+            String printed = res.getPrintedWaybill();
+            if (!res.isSuccess() || printed == null || printed.isBlank() || !isInTable(printed, rows)) {
+                continue;
+            }
+            List<String> barcodeValues = new ArrayList<>();
+            barcodeValues.add(res.getDecodedValue());
+            if (res.getAllExtractedValues() != null) {
+                barcodeValues.addAll(res.getAllExtractedValues());
+            }
+            if (barcodeValues.stream().anyMatch(code -> isInTable(code, rows))) {
+                continue;
+            }
+            log.info("Image {} uses the printed waybill {}: its barcode {} is in no row of the table",
+                    res.getFilename(), printed, res.getDecodedValue());
+            res.setDecodedValue(printed);
+            res.setAllExtractedValues(List.of(printed));
+            res.setCreateDate(res.getPrintedWaybillCreateDate());
+            res.setCreateDateProblem(res.getPrintedWaybillCreateDateProblem());
+            res.setPrintedWaybill(null);
+        }
+    }
+
+    private boolean isInTable(String code, List<List<String>> rows) {
+        String norm = code == null ? "" : ExcelHighlightService.normalize(code);
+        if (norm.isEmpty() || rows == null) {
+            return false;
+        }
+        Map<String, String> lookup = Map.of(norm, code.trim());
+        return rows.stream()
+                .filter(Objects::nonNull)
+                .flatMap(List::stream)
+                .anyMatch(cell -> cell != null
+                        && excelHighlightService.findMatchingDecodedCode(ExcelHighlightService.normalize(cell), lookup) != null);
+    }
+
     /** The entry of matchedCodesSet that the decoded code stands for, or null when it matches no row. */
     private String findMatchedRowCode(String decoded, Set<String> matchedCodesSet) {
         if (decoded == null || decoded.isBlank() || matchedCodesSet == null || matchedCodesSet.isEmpty()) {
@@ -245,5 +299,16 @@ public class ReconciliationService {
             }
         }
         return null;
+    }
+
+    private static List<BarcodeResult> awaitPhotoDecode(CompletableFuture<List<BarcodeResult>> photoDecode) throws Exception {
+        try {
+            return photoDecode.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof Exception cause) {
+                throw cause;
+            }
+            throw e;
+        }
     }
 }

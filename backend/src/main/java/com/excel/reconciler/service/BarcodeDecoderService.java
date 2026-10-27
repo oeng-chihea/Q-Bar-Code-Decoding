@@ -10,27 +10,35 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 @Service
 public class BarcodeDecoderService {
     private static final Logger log = LoggerFactory.getLogger(BarcodeDecoderService.class);
     private static final int AI_FALLBACK_BATCH_SIZE = 4;
+    private static final Duration DEFAULT_DATE_READ_BUDGET = Duration.ofSeconds(60);
+    private static final int DEFAULT_DATE_READ_BATCH_SIZE = 6;
+    private static final int MAX_SAVED_WAYBILL_LENGTH = 64;
+    private static final int MIN_PRINTED_WAYBILL_LENGTH = 6;
 
     private static final class LocalScan {
         private final String filename;
@@ -59,29 +67,54 @@ public class BarcodeDecoderService {
     private final GeminiVisionService geminiVisionService;
     private final Executor imageDecoderExecutor;
     private final Clock clock;
-    // Wait before the second pass over date reads that failed; tests set it to 0
-    private long retryCooldownMs = 4000;
+    private final Optional<ReceiptDateStore> dateStore;
+    private final Duration dateReadBudget;
+    private final int dateReadBatchSize;
 
     @Autowired
     public BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
                                  GeminiVisionService geminiVisionService,
                                  @Qualifier("imageDecoderExecutor") Executor imageDecoderExecutor,
-                                 @Value("${app.waybill.zone:Asia/Phnom_Penh}") String zone) {
-        this(zxingDecoderService, geminiVisionService, imageDecoderExecutor, Clock.system(ZoneId.of(zone)));
+                                 Optional<ReceiptDateStore> dateStore,
+                                 @Value("${app.waybill.zone:Asia/Phnom_Penh}") String zone,
+                                 @Value("${gemini.api.date-read-budget-seconds:60}") int dateReadBudgetSeconds,
+                                 @Value("${gemini.api.date-read-batch-size:6}") int dateReadBatchSize) {
+        this(zxingDecoderService, geminiVisionService, imageDecoderExecutor, Clock.system(ZoneId.of(zone)),
+                dateStore, Duration.ofSeconds(Math.max(1, dateReadBudgetSeconds)), dateReadBatchSize);
+    }
+
+    BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
+                          GeminiVisionService geminiVisionService,
+                          Executor imageDecoderExecutor,
+                          Clock clock,
+                          Optional<ReceiptDateStore> dateStore,
+                          Duration dateReadBudget,
+                          int dateReadBatchSize) {
+        this.zxingDecoderService = zxingDecoderService;
+        this.geminiVisionService = geminiVisionService;
+        this.imageDecoderExecutor = imageDecoderExecutor;
+        this.clock = clock;
+        this.dateStore = dateStore;
+        this.dateReadBudget = dateReadBudget;
+        this.dateReadBatchSize = Math.max(1, dateReadBatchSize);
+    }
+
+    BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
+                          GeminiVisionService geminiVisionService,
+                          Executor imageDecoderExecutor,
+                          Clock clock,
+                          Optional<ReceiptDateStore> dateStore,
+                          Duration dateReadBudget) {
+        this(zxingDecoderService, geminiVisionService, imageDecoderExecutor, clock, dateStore, dateReadBudget,
+                DEFAULT_DATE_READ_BATCH_SIZE);
     }
 
     BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
                           GeminiVisionService geminiVisionService,
                           Executor imageDecoderExecutor,
                           Clock clock) {
-        this.zxingDecoderService = zxingDecoderService;
-        this.geminiVisionService = geminiVisionService;
-        this.imageDecoderExecutor = imageDecoderExecutor;
-        this.clock = clock;
-    }
-
-    void setRetryCooldownMs(long retryCooldownMs) {
-        this.retryCooldownMs = retryCooldownMs;
+        this(zxingDecoderService, geminiVisionService, imageDecoderExecutor, clock,
+                Optional.empty(), DEFAULT_DATE_READ_BUDGET);
     }
 
     BarcodeDecoderService(ZXingDecoderService zxingDecoderService,
@@ -89,7 +122,6 @@ public class BarcodeDecoderService {
                           Executor imageDecoderExecutor) {
         this(zxingDecoderService, geminiVisionService, imageDecoderExecutor,
                 Clock.system(ZoneId.of("Asia/Phnom_Penh")));
-        this.retryCooldownMs = 0;
     }
 
     public List<BarcodeResult> decodeBatch(List<MultipartFile> imageFiles) {
@@ -150,105 +182,223 @@ public class BarcodeDecoderService {
         return results;
     }
 
-    /**
-     * Reads the receipt's CREATED date for every image whose barcode was decoded, and validates it.
-     * Identical photos are read once and share the result. Reads that fail (rate limit, busy server)
-     * get a second pass after a cool-down, and are reported as READ_FAILED rather than "no date on the
-     * receipt". Images without a barcode are skipped because they cannot be matched to an Excel row.
-     */
     private void attachCreateDates(List<LocalScan> localScans, List<BarcodeResult> results) {
-        Map<String, List<Integer>> indexesByContent = new LinkedHashMap<>();
+        Map<String, List<Integer>> indexesByWaybill = new LinkedHashMap<>();
         for (int i = 0; i < results.size(); i++) {
-            if (results.get(i).isSuccess() && localScans.get(i).imageBytes.length > 0) {
-                indexesByContent.computeIfAbsent(contentHash(localScans.get(i).imageBytes), k -> new ArrayList<>())
-                        .add(i);
+            BarcodeResult result = results.get(i);
+            if (result.isSuccess() && result.getDecodedValue() != null && localScans.get(i).imageBytes.length > 0) {
+                indexesByWaybill.computeIfAbsent(waybillKey(result.getDecodedValue()), k -> new ArrayList<>()).add(i);
             }
         }
-        if (indexesByContent.isEmpty()) {
+        if (indexesByWaybill.isEmpty()) {
             return;
-        }
-
-        Map<String, GeminiVisionService.ReceiptDateRead> readings = readDates(
-                localScans, indexesByContent, new ArrayList<>(indexesByContent.keySet()));
-
-        List<String> failed = readings.entrySet().stream()
-                .filter(entry -> entry.getValue().failed() && !entry.getValue().quotaExhausted())
-                .map(Map.Entry::getKey)
-                .toList();
-        if (!failed.isEmpty()) {
-            log.warn("Receipt date read failed for {} image(s); retrying them after a short pause", failed.size());
-            pauseBeforeRetry();
-            readings.putAll(readDates(localScans, indexesByContent, failed));
         }
 
         LocalDate today = LocalDate.now(clock);
-        indexesByContent.forEach((hash, indexes) -> {
-            GeminiVisionService.ReceiptDateRead reading = readings.get(hash);
-            for (int index : indexes) {
-                applyReading(results.get(index), reading, today);
+        Map<String, ReceiptDateStore.SavedDate> saved = findSavedDates(indexesByWaybill.keySet());
+        saved.forEach((waybill, date) -> {
+            for (int index : indexesByWaybill.getOrDefault(waybill, List.of())) {
+                results.get(index).setCreateDateText(date.text());
+                results.get(index).setCreateDate(date.date().toString());
             }
         });
-    }
 
-    /** Reads one photo per content hash, in the same small concurrent batches as the barcode fallback. */
-    private Map<String, GeminiVisionService.ReceiptDateRead> readDates(List<LocalScan> localScans,
-                                                                       Map<String, List<Integer>> indexesByContent,
-                                                                       List<String> hashes) {
-        Map<String, GeminiVisionService.ReceiptDateRead> readings = new LinkedHashMap<>();
-        for (int start = 0; start < hashes.size(); start += AI_FALLBACK_BATCH_SIZE) {
-            List<String> batch = hashes.subList(start, Math.min(start + AI_FALLBACK_BATCH_SIZE, hashes.size()));
+        List<String> toRead = indexesByWaybill.keySet().stream().filter(waybill -> !saved.containsKey(waybill)).toList();
+        if (toRead.isEmpty()) {
+            log.info("Receipt dates: all {} reused from earlier uploads", saved.size());
+            return;
+        }
+
+        List<List<String>> batches = new ArrayList<>();
+        List<CompletableFuture<List<GeminiVisionService.ReceiptDateRead>>> reads = new ArrayList<>();
+        for (int start = 0; start < toRead.size(); start += dateReadBatchSize) {
+            List<String> batch = toRead.subList(start, Math.min(start + dateReadBatchSize, toRead.size()));
             List<GeminiVisionService.BarcodeImage> images = batch.stream()
-                    .map(hash -> {
-                        LocalScan scan = localScans.get(indexesByContent.get(hash).get(0));
+                    .map(waybill -> {
+                        LocalScan scan = localScans.get(indexesByWaybill.get(waybill).get(0));
                         return new GeminiVisionService.BarcodeImage(scan.imageBytes, scan.contentType);
                     })
                     .toList();
-            List<GeminiVisionService.ReceiptDateRead> batchReadings =
-                    geminiVisionService.extractReceiptCreatedParallel(images);
+            batches.add(batch);
+            reads.add(CompletableFuture.supplyAsync(
+                    () -> geminiVisionService.extractReceiptCreatedBatch(images), imageDecoderExecutor));
+        }
 
+        awaitReads(reads);
+        int unfinished = 0;
+        Map<String, ReceiptDateStore.SavedDate> newDates = new LinkedHashMap<>();
+        for (int b = 0; b < batches.size(); b++) {
+            CompletableFuture<List<GeminiVisionService.ReceiptDateRead>> read = reads.get(b);
+            List<String> batch = batches.get(b);
+            if (!read.isDone()) {
+                unfinished += batch.size();
+            }
+            read.cancel(false);
+            List<GeminiVisionService.ReceiptDateRead> readings = finishedReadings(read, batch.size());
             for (int i = 0; i < batch.size(); i++) {
-                GeminiVisionService.ReceiptDateRead reading =
-                        batchReadings != null && i < batchReadings.size() && batchReadings.get(i) != null
-                                ? batchReadings.get(i)
-                                : GeminiVisionService.ReceiptDateRead.failure();
-                readings.put(batch.get(i), reading);
+                List<Integer> indexes = indexesByWaybill.get(batch.get(i));
+                BarcodeResult readPhoto = results.get(indexes.get(0));
+                correctMisreadBarcode(readings.get(i), localScans.get(indexes.get(0)), indexes, results);
+                for (int index : indexes) {
+                    ReceiptDateStore.SavedDate date = applyReading(results.get(index), readings.get(i), readPhoto, today);
+                    if (date != null) {
+                        newDates.putIfAbsent(waybillKey(readPhoto.getDecodedValue()), date);
+                    }
+                }
             }
         }
-        return readings;
+        log.info("Receipt dates: {} reused, {} read in {} request(s), {} not finished within {}s",
+                saved.size(), toRead.size() - unfinished, batches.size(), unfinished, dateReadBudget.toSeconds());
+        saveDates(newDates);
     }
 
-    private void applyReading(BarcodeResult result, GeminiVisionService.ReceiptDateRead reading, LocalDate today) {
-        if (reading.failed()) {
-            result.setCreateDateProblem((reading.quotaExhausted()
-                    ? ReceiptDateValidator.Problem.QUOTA_EXHAUSTED
-                    : ReceiptDateValidator.Problem.READ_FAILED).name());
-            return;
-        }
-        ReceiptDateValidator.Result validated = ReceiptDateValidator.validate(reading.text(), today);
-        result.setCreateDateText(validated.rawText());
-        if (validated.isValid()) {
-            result.setCreateDate(validated.date().toString());
-        } else {
-            result.setCreateDateProblem(validated.problem().name());
-        }
-    }
-
-    private void pauseBeforeRetry() {
-        if (retryCooldownMs <= 0) {
-            return;
-        }
+    private void awaitReads(List<CompletableFuture<List<GeminiVisionService.ReceiptDateRead>>> reads) {
         try {
-            Thread.sleep(retryCooldownMs);
+            CompletableFuture.allOf(reads.toArray(CompletableFuture[]::new))
+                    .get(dateReadBudget.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+        } catch (ExecutionException e) {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
     }
 
-    private static String contentHash(byte[] bytes) {
+    private static List<GeminiVisionService.ReceiptDateRead> finishedReadings(
+            CompletableFuture<List<GeminiVisionService.ReceiptDateRead>> read, int size) {
+        List<GeminiVisionService.ReceiptDateRead> readings =
+                new ArrayList<>(Collections.nCopies(size, GeminiVisionService.ReceiptDateRead.failure()));
+        if (!read.isDone() || read.isCancelled()) {
+            return readings;
+        }
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
+            List<GeminiVisionService.ReceiptDateRead> answered = read.join();
+            for (int i = 0; answered != null && i < Math.min(size, answered.size()); i++) {
+                if (answered.get(i) != null) {
+                    readings.set(i, answered.get(i));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Receipt date read error: {}", e.getMessage());
+        }
+        return readings;
+    }
+
+    private ReceiptDateStore.SavedDate applyReading(BarcodeResult result, GeminiVisionService.ReceiptDateRead reading,
+                                                    BarcodeResult readPhoto, LocalDate today) {
+        if (reading.failed()) {
+            result.setCreateDateProblem((reading.quotaExhausted()
+                    ? ReceiptDateValidator.Problem.QUOTA_EXHAUSTED
+                    : ReceiptDateValidator.Problem.READ_FAILED).name());
+            return null;
+        }
+        if (!printedWaybillMatches(reading.waybillNo(), readPhoto)) {
+            log.warn("Receipt date not trusted for {}: the receipt prints waybill {}",
+                    readPhoto.getDecodedValue(), reading.waybillNo());
+            result.setCreateDateText(reading.text());
+            result.setCreateDateProblem(ReceiptDateValidator.Problem.WAYBILL_MISMATCH.name());
+            // Kept so the reconciliation can still use the printed waybill when only it is in the Excel table
+            ReceiptDateValidator.Result validated = ReceiptDateValidator.validate(reading.text(), today);
+            result.setPrintedWaybill(reading.waybillNo().trim());
+            if (validated.isValid()) {
+                result.setPrintedWaybillCreateDate(validated.date().toString());
+            } else {
+                result.setPrintedWaybillCreateDateProblem(validated.problem().name());
+            }
+            return null;
+        }
+        ReceiptDateValidator.Result validated = ReceiptDateValidator.validate(reading.text(), today);
+        result.setCreateDateText(validated.rawText());
+        if (validated.isValid()) {
+            result.setCreateDate(validated.date().toString());
+            return new ReceiptDateStore.SavedDate(validated.date(), validated.rawText());
+        }
+        result.setCreateDateProblem(validated.problem().name());
+        return null;
+    }
+
+    /**
+     * A receipt printing a different waybill than its barcode decoded to may mean the barcode was misread:
+     * a creased label read from the downscaled photo can still pass the Code 128 checksum. The photo is
+     * scanned again with every pass, and when the barcode also decodes to the printed waybill, two
+     * independent reads agree, so that value replaces the misread one for every photo of the group.
+     */
+    private void correctMisreadBarcode(GeminiVisionService.ReceiptDateRead reading, LocalScan scan,
+                                       List<Integer> indexes, List<BarcodeResult> results) {
+        BarcodeResult readPhoto = results.get(indexes.get(0));
+        if (reading.failed() || printedWaybillMatches(reading.waybillNo(), readPhoto)) {
+            return;
+        }
+        String printed = normalizeCode(reading.waybillNo());
+        Optional<String> confirmed = zxingDecoderService.decodeEveryCandidate(scan.imageBytes).stream()
+                .filter(code -> normalizeCode(code).equals(printed))
+                .findFirst();
+        if (confirmed.isEmpty()) {
+            return;
+        }
+        String misread = readPhoto.getDecodedValue();
+        log.info("Barcode of {} re-read as {} instead of {}, matching the waybill printed on the receipt",
+                scan.filename, confirmed.get(), misread);
+        for (int index : indexes) {
+            BarcodeResult result = results.get(index);
+            List<String> values = new ArrayList<>();
+            values.add(confirmed.get());
+            if (result.getAllExtractedValues() != null) {
+                result.getAllExtractedValues().stream()
+                        .filter(value -> value != null && !value.equals(misread) && !value.equals(confirmed.get()))
+                        .forEach(values::add);
+            }
+            result.setDecodedValue(confirmed.get());
+            result.setAllExtractedValues(values);
+        }
+    }
+
+    private static boolean printedWaybillMatches(String printedWaybill, BarcodeResult photo) {
+        String printed = normalizeCode(printedWaybill);
+        if (printed.length() < MIN_PRINTED_WAYBILL_LENGTH) {
+            return true;
+        }
+        List<String> codes = new ArrayList<>();
+        codes.add(photo.getDecodedValue());
+        if (photo.getAllExtractedValues() != null) {
+            codes.addAll(photo.getAllExtractedValues());
+        }
+        return codes.stream().anyMatch(code -> normalizeCode(code).equals(printed));
+    }
+
+    private static String normalizeCode(String code) {
+        return code == null ? "" : code.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
+    }
+
+    private static String waybillKey(String decodedValue) {
+        return decodedValue.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private Map<String, ReceiptDateStore.SavedDate> findSavedDates(Collection<String> waybills) {
+        if (dateStore.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            return dateStore.get().findDates(waybills);
+        } catch (Exception e) {
+            log.warn("Could not load saved receipt dates: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private void saveDates(Map<String, ReceiptDateStore.SavedDate> dates) {
+        if (dateStore.isEmpty() || dates.isEmpty()) {
+            return;
+        }
+        Map<String, ReceiptDateStore.SavedDate> storable = new LinkedHashMap<>();
+        dates.forEach((waybill, date) -> {
+            if (waybill.length() <= MAX_SAVED_WAYBILL_LENGTH) {
+                storable.put(waybill, date);
+            }
+        });
+        try {
+            dateStore.get().saveDates(storable);
+        } catch (Exception e) {
+            log.warn("Could not save receipt dates: {}", e.getMessage());
         }
     }
 
