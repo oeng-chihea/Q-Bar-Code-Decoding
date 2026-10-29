@@ -58,6 +58,14 @@ test('spreadsheet controls wrap and table overflow stays inside its panel', () =
   assert.match(source, /min-w-\[640px\]/);
 });
 
+test('spreadsheet rows become stacked cards on phones and the table starts at md', () => {
+  const source = readSource('../src/features/reconciliation/components/ExcelPreviewTable.tsx');
+
+  assert.match(source, /<ul className="md:hidden /);
+  assert.match(source, /tableRows\.map\(renderPhoneCard\)/);
+  assert.match(source, /hidden md:block min-w-0 overflow-x-auto/);
+});
+
 test('unmatched results use a phone list and stretch controls', () => {
   const source = readSource('../src/features/reconciliation/components/ImageScanGrid.tsx');
 

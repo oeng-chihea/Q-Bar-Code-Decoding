@@ -22,9 +22,6 @@ public interface WaybillTrackingStore {
     /** Stops tracking open waybills that are now matched. Waybills that were never tracked are ignored. */
     void markMatched(Collection<String> waybillNos, LocalDate today);
 
-    /** Open waybills, oldest first, up to {@code limit}. */
-    List<TrackedWaybill> findOpen(int limit);
-
     /** Open waybills among the given numbers. */
     List<TrackedWaybill> findOpenByWaybillNos(Collection<String> waybillNos);
 }

@@ -15,15 +15,14 @@ const waybill = (overrides: Partial<Waybill>): Waybill => ({
   daysLeft: 6,
   overdueDays: 0,
   status: 'NEW',
-  inThisUpload: true,
   ...overrides,
 });
 
 const waybills = [
   waybill({ waybillNo: 'NEW-1' }),
-  waybill({ waybillNo: 'MID-1', status: 'ON_TRACK', daysOpen: 3, daysLeft: 3, inThisUpload: false }),
-  waybill({ waybillNo: 'OLD-1', status: 'OVERDUE', daysOpen: 9, daysLeft: 0, overdueDays: 3, inThisUpload: false }),
-  waybill({ waybillNo: 'OLD-2', status: 'OVERDUE', daysOpen: 7, daysLeft: 0, overdueDays: 1, inThisUpload: true }),
+  waybill({ waybillNo: 'MID-1', status: 'ON_TRACK', daysOpen: 3, daysLeft: 3 }),
+  waybill({ waybillNo: 'OLD-1', status: 'OVERDUE', daysOpen: 9, daysLeft: 0, overdueDays: 3 }),
+  waybill({ waybillNo: 'OLD-2', status: 'OVERDUE', daysOpen: 7, daysLeft: 0, overdueDays: 1 }),
 ];
 
 test('finds a tracked waybill for a scanned code ignoring case and spaces', () => {

@@ -18,12 +18,9 @@ export const OverdueWaybillAlert = ({ overdueCount, overdueAfterDays, onView }: 
       className="min-w-0 bg-[#461B21]/60 border border-[#FB7185]/40 rounded-lg p-3.5 sm:p-4 flex flex-col gap-3 sm:flex-row sm:items-center text-left"
     >
       <AlertTriangle className="w-5 h-5 text-[#FB7185] shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="break-words text-sm font-semibold text-[#FCA5A5] m-0">
-          {t('waybill.alertTitle', { count: overdueCount, days: overdueAfterDays })}
-        </p>
-        <p className="break-words text-xs text-[#FCA5A5]/80 m-0 mt-0.5">{t('waybill.alertDescription')}</p>
-      </div>
+      <p className="min-w-0 flex-1 break-words text-sm font-semibold text-[#FCA5A5] m-0">
+        {t('waybill.alertTitle', { count: overdueCount, days: overdueAfterDays })}
+      </p>
       <button
         type="button"
         onClick={onView}

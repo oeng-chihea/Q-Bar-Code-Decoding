@@ -18,10 +18,19 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.http.MediaType;
 
+import java.io.ByteArrayInputStream;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -149,7 +158,7 @@ class BarcodeReconciliationControllerContractTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.images[0].imageIndex").value(1))
-                .andExpect(jsonPath("$.images[0].filename").value("item2.png"))
+                .andExpect(jsonPath("$.images[0].filename").value("01_item2.png"))
                 .andExpect(jsonPath("$.images[0].contentType").value("image/png"))
                 .andExpect(jsonPath("$.images[0].size").value(3))
                 .andExpect(jsonPath("$.images[0].downloadUrl")
@@ -169,6 +178,58 @@ class BarcodeReconciliationControllerContractTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType("application/zip"))
                 .andExpect(header().string("Content-Disposition", containsString("unmatched_images_" + reconciliationId + ".zip")));
+    }
+
+    @Test
+    void listsAndZipsUnmatchedReceiptsNewestCreateDateFirst() throws Exception {
+        String reconciliationId = "rec-newest-first";
+        registry.create(reconciliationId);
+
+        List<Path> paths = fileStorage.saveImageFiles(reconciliationId, List.of(
+                new MockMultipartFile("images", "undated.png", "image/png", new byte[]{1}),
+                new MockMultipartFile("images", "older.png", "image/png", new byte[]{2}),
+                new MockMultipartFile("images", "newer.png", "image/png", new byte[]{3}),
+                new MockMultipartFile("images", "older-same-day.png", "image/png", new byte[]{4})));
+        registry.setImagePaths(reconciliationId, paths);
+
+        BarcodeResult undated = unmatchedScan("undated.png", null);
+        BarcodeResult older = unmatchedScan("older.png", "2026-10-20");
+        BarcodeResult newer = unmatchedScan("newer.png", "2026-10-28");
+        BarcodeResult olderSameDay = unmatchedScan("older-same-day.png", "2026-10-20");
+        ReconciliationResponse response = new ReconciliationResponse();
+        response.setScanResults(List.of(undated, older, newer, olderSameDay));
+        response.setDownloadFileName("catalog_highlighted.xlsx");
+        response.setHighlightedExcelBase64(Base64.getEncoder().encodeToString(new byte[]{7, 8}));
+        registry.complete(reconciliationId, response, fileStorage.saveResult(reconciliationId, response));
+
+        mockMvc.perform(get("/api/v1/barcode-reconciliations/{id}/download-unmatched", reconciliationId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.images[*].imageIndex").value(contains(2, 1, 3, 0)))
+                .andExpect(jsonPath("$.images[*].filename").value(contains(
+                        "01_2026-10-28_newer.png", "02_2026-10-20_older.png",
+                        "03_2026-10-20_older-same-day.png", "04_undated.png")));
+
+        byte[] zip = mockMvc.perform(get("/api/v1/barcode-reconciliations/{id}/download-unmatched-zip", reconciliationId))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        List<String> names = new ArrayList<>();
+        Map<String, LocalDateTime> times = new HashMap<>();
+        try (ZipInputStream entries = new ZipInputStream(new ByteArrayInputStream(zip))) {
+            for (ZipEntry entry = entries.getNextEntry(); entry != null; entry = entries.getNextEntry()) {
+                names.add(entry.getName());
+                times.put(entry.getName(), entry.getTimeLocal());
+            }
+        }
+        assertEquals(List.of("01_2026-10-28_newer.png", "02_2026-10-20_older.png",
+                "03_2026-10-20_older-same-day.png", "04_undated.png"), names);
+        assertEquals(LocalDate.of(2026, 10, 28).atStartOfDay(), times.get("01_2026-10-28_newer.png"));
+    }
+
+    private static BarcodeResult unmatchedScan(String filename, String createDate) {
+        BarcodeResult result = new BarcodeResult(filename, filename, List.of(filename), "ZXING", true, "CODE_128", null);
+        result.setMatched(false);
+        result.setCreateDate(createDate);
+        return result;
     }
 
     @Test

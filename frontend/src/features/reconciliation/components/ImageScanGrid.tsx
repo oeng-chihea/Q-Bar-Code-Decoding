@@ -16,6 +16,7 @@ import { useReceiptPreview } from '@/features/reconciliation/hooks/useReceiptPre
 import { findWaybill } from '@/features/reconciliation/utils/waybillTracking';
 import { groupUnmatchedByBarcode } from '@/features/reconciliation/utils/unmatchedGrouping';
 import { findReceiptFile } from '@/features/reconciliation/utils/receiptFiles';
+import { newestReceiptFirst, rankedReceiptFilename } from '@/features/reconciliation/utils/receiptOrder';
 import { findDuplicateSource } from '@/features/reconciliation/utils/previewTableRows';
 import {
   downloadUnmatchedImage,
@@ -118,14 +119,16 @@ export const ImageScanGrid = ({
     setIsDownloading(true);
     setDownloadError(null);
     try {
+      // Same newest-receipt-first order and ranked names as the backend ZIP
       const localUnmatchedFiles: File[] = [];
       if (imageFiles && imageFiles.length > 0) {
-        for (let i = 0; i < unmatchedResults.length; i++) {
-          const file = getFileForItem(unmatchedResults[i], i);
-          if (file) {
-            localUnmatchedFiles.push(file);
-          }
-        }
+        const ordered = newestReceiptFirst(unmatchedResults, (item) => item.createDate);
+        ordered.forEach((item, i) => {
+          const file = getFileForItem(item, i);
+          if (!file) return;
+          const name = rankedReceiptFilename(i + 1, ordered.length, item.createDate, file.name);
+          localUnmatchedFiles.push(new File([file], name, { type: file.type, lastModified: file.lastModified }));
+        });
       }
 
       const hasAllLocalFiles = localUnmatchedFiles.length === unmatchedResults.length;

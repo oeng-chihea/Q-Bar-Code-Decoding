@@ -21,9 +21,9 @@ class UnmatchedWaybillSheetWriterTest {
     private final UnmatchedWaybillSheetWriter writer = new UnmatchedWaybillSheetWriter();
 
     private final UnmatchedWaybill overdue = new UnmatchedWaybill("J0001", LocalDate.of(2026, 9, 20),
-            LocalDate.of(2026, 9, 26), 15, 0, 9, WaybillStatus.OVERDUE, false, "Nhim Sarey");
+            LocalDate.of(2026, 9, 26), 15, 0, 9, WaybillStatus.OVERDUE, "Nhim Sarey");
     private final UnmatchedWaybill onTrack = new UnmatchedWaybill("J0002", LocalDate.of(2026, 10, 3),
-            LocalDate.of(2026, 10, 9), 2, 4, 0, WaybillStatus.ON_TRACK, true);
+            LocalDate.of(2026, 10, 9), 2, 4, 0, WaybillStatus.ON_TRACK);
 
     @Test
     void addsASheetWithOneRowPerWaybillAndKeepsTheOriginalSheet() throws Exception {

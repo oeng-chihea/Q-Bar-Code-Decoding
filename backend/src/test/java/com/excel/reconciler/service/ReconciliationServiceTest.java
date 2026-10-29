@@ -148,7 +148,7 @@ class ReconciliationServiceTest {
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
         UnmatchedWaybill overdue = new UnmatchedWaybill("J9999", LocalDate.of(2026, 9, 20),
-                LocalDate.of(2026, 9, 26), 14, 0, 8, WaybillStatus.OVERDUE, true);
+                LocalDate.of(2026, 9, 26), 14, 0, 8, WaybillStatus.OVERDUE);
         when(tracking.track(any(), any(), any()))
                 .thenReturn(new WaybillTrackingService.TrackingResult(true, 6, List.of(overdue)));
 
@@ -280,11 +280,11 @@ class ReconciliationServiceTest {
                         List.of("Waybill Number"), Set.of(), Collections.emptyList()));
         when(sheetWriter.append(any(), any(), anyInt())).thenAnswer(call -> call.getArgument(0));
         UnmatchedWaybill thisUpload = new UnmatchedWaybill("J9999", LocalDate.of(2026, 10, 28),
-                LocalDate.of(2026, 11, 3), 0, 6, 0, WaybillStatus.NEW, true);
+                LocalDate.of(2026, 11, 3), 0, 6, 0, WaybillStatus.NEW);
         UnmatchedWaybill earlier = new UnmatchedWaybill("J8888", LocalDate.of(2026, 10, 20),
-                LocalDate.of(2026, 10, 26), 8, 0, 2, WaybillStatus.OVERDUE, false);
+                LocalDate.of(2026, 10, 26), 8, 0, 2, WaybillStatus.OVERDUE);
         UnmatchedWaybill unknown = new UnmatchedWaybill("J7777", LocalDate.of(2026, 10, 20),
-                LocalDate.of(2026, 10, 26), 8, 0, 2, WaybillStatus.OVERDUE, false);
+                LocalDate.of(2026, 10, 26), 8, 0, 2, WaybillStatus.OVERDUE);
         when(tracking.track(any(), any(), any()))
                 .thenReturn(new WaybillTrackingService.TrackingResult(true, 6, List.of(thisUpload, earlier, unknown)));
         when(store.findReceipts(any())).thenReturn(Map.of(

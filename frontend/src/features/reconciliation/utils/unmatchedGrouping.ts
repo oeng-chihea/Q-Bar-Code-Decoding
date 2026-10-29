@@ -1,4 +1,5 @@
 import type { BarcodeResult } from '../model/types';
+import { newestReceiptFirst } from './receiptOrder.ts';
 
 export interface UnmatchedPhoto {
   item: BarcodeResult;
@@ -13,7 +14,7 @@ export interface UnmatchedGroup {
 }
 
 /**
- * One group per barcode (ignoring case and surrounding spaces).
+ * One group per barcode (ignoring case and surrounding spaces), newest receipt date first.
  * Photos without a readable barcode are never merged, since there is nothing to group them by.
  */
 export function groupUnmatchedByBarcode(
@@ -33,5 +34,9 @@ export function groupUnmatchedByBarcode(
     groups.set(key, group);
   });
 
-  return [...groups.values()];
+  return newestReceiptFirst([...groups.values()], newestCreateDate);
+}
+
+function newestCreateDate(group: UnmatchedGroup): string | undefined {
+  return newestReceiptFirst(group.photos, ({ item }) => item.createDate)[0]?.item.createDate;
 }

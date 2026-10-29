@@ -48,3 +48,18 @@ test('different barcodes stay in different groups, in first-seen order', () => {
   );
   assert.deepEqual(groups.map((g) => g.barcode), ['J2', 'J1']);
 });
+
+test('lists unmatched cards newest receipt date first, undated ones last', () => {
+  const dated = (filename: string, decodedValue: string, createDate?: string): BarcodeResult => ({
+    ...photo(filename, decodedValue),
+    createDate,
+  });
+
+  const groups = groupUnmatchedByBarcode(
+    [dated('a.jpg', 'J1'), dated('b.jpg', 'J2', '2026-10-20'), dated('c.jpg', 'J3', '2026-10-28')],
+    unmatchedOnly,
+    code,
+  );
+
+  assert.deepEqual(groups.map((g) => g.barcode), ['J3', 'J2', 'J1']);
+});

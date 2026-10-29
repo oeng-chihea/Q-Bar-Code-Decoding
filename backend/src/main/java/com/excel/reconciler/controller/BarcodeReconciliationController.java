@@ -29,14 +29,15 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -211,15 +212,17 @@ public class BarcodeReconciliationController {
                 return ResponseEntity.badRequest().body(Map.of("error", "No unmatched images found"));
             }
 
-            List<UnmatchedImageDownload> downloads = unmatchedImages.stream()
-                    .map(image -> new UnmatchedImageDownload(
-                            image.imageIndex(),
-                            image.filename(),
-                            image.contentType(),
-                            image.size(),
-                            "/api/v1/barcode-reconciliations/" + reconciliationId
-                                    + "/download-unmatched/" + image.imageIndex()))
-                    .toList();
+            List<UnmatchedImageDownload> downloads = new ArrayList<>();
+            for (int rank = 1; rank <= unmatchedImages.size(); rank++) {
+                UnmatchedImageFile image = unmatchedImages.get(rank - 1);
+                downloads.add(new UnmatchedImageDownload(
+                        image.imageIndex(),
+                        rankedFilename(rank, unmatchedImages.size(), image),
+                        image.contentType(),
+                        image.size(),
+                        "/api/v1/barcode-reconciliations/" + reconciliationId
+                                + "/download-unmatched/" + image.imageIndex()));
+            }
 
             return ResponseEntity.ok(new UnmatchedImagesResponse(downloads));
         } catch (IllegalArgumentException e) {
@@ -302,16 +305,14 @@ public class BarcodeReconciliationController {
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-                Set<String> usedNames = new HashSet<>();
-                for (int i = 0; i < unmatchedImages.size(); i++) {
-                    UnmatchedImageFile image = unmatchedImages.get(i);
-                    String entryName = image.filename();
-                    if (usedNames.contains(entryName)) {
-                        entryName = (i + 1) + "_" + entryName;
+                // The rank prefix keeps names unique and the order visible when sorted by name;
+                // the entry time lets a file manager sort by the receipt date as well
+                for (int rank = 1; rank <= unmatchedImages.size(); rank++) {
+                    UnmatchedImageFile image = unmatchedImages.get(rank - 1);
+                    ZipEntry entry = new ZipEntry(rankedFilename(rank, unmatchedImages.size(), image));
+                    if (image.createDate() != null) {
+                        entry.setTimeLocal(image.createDate().atStartOfDay());
                     }
-                    usedNames.add(entryName);
-
-                    ZipEntry entry = new ZipEntry(entryName);
                     entry.setSize(image.size());
                     zos.putNextEntry(entry);
                     Files.copy(image.path(), zos);
@@ -370,9 +371,34 @@ public class BarcodeReconciliationController {
                     imagePath,
                     filename,
                     fileStorage.contentTypeForPath(imagePath),
-                    Files.size(imagePath)));
+                    Files.size(imagePath),
+                    parseCreateDate(item.getCreateDate())));
         }
+        // Newest receipt first; receipts without a readable date go last. The sort is stable,
+        // so receipts from the same day keep their upload order.
+        unmatchedImages.sort(Comparator.comparing(UnmatchedImageFile::createDate,
+                Comparator.nullsLast(Comparator.reverseOrder())));
         return unmatchedImages;
+    }
+
+    /** e.g. "03_2026-10-28_photo_12.jpg", or "07_photo_5.jpg" when the receipt date is unknown. */
+    private static String rankedFilename(int rank, int total, UnmatchedImageFile image) {
+        int width = Math.max(2, String.valueOf(total).length());
+        String prefix = String.format(Locale.ROOT, "%0" + width + "d_", rank);
+        return image.createDate() == null
+                ? prefix + image.filename()
+                : prefix + image.createDate() + "_" + image.filename();
+    }
+
+    private static LocalDate parseCreateDate(String createDate) {
+        if (createDate == null || createDate.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(createDate.trim());
+        } catch (DateTimeParseException e) {
+            return null;
+        }
     }
 
     private String safeDownloadFilename(String originalFilename, Path imagePath) {
@@ -417,7 +443,8 @@ public class BarcodeReconciliationController {
                                       Path path,
                                       String filename,
                                       String contentType,
-                                      long size) {
+                                      long size,
+                                      LocalDate createDate) {
     }
 
     private String messageFor(Exception exception) {

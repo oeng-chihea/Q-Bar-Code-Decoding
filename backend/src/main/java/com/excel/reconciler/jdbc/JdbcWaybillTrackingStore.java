@@ -42,14 +42,6 @@ public class JdbcWaybillTrackingStore implements WaybillTrackingStore {
             WHERE waybill_no = ? AND status = 'OPEN'
             """;
 
-    private static final String SELECT_OPEN_SQL = """
-            SELECT waybill_no, first_seen_date
-            FROM unmatched_waybill
-            WHERE status = 'OPEN'
-            ORDER BY first_seen_date, id
-            LIMIT ?
-            """;
-
     private static final RowMapper<TrackedWaybill> TRACKED_WAYBILL_MAPPER = (rs, rowNum) ->
             new TrackedWaybill(rs.getString("waybill_no"), rs.getObject("first_seen_date", LocalDate.class));
 
@@ -94,11 +86,6 @@ public class JdbcWaybillTrackingStore implements WaybillTrackingStore {
             ps.setObject(1, today);
             ps.setString(2, waybillNo);
         });
-    }
-
-    @Override
-    public List<TrackedWaybill> findOpen(int limit) {
-        return jdbcTemplate.query(SELECT_OPEN_SQL, TRACKED_WAYBILL_MAPPER, limit);
     }
 
     @Override

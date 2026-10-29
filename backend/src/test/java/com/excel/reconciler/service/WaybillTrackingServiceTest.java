@@ -8,7 +8,6 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,7 +38,6 @@ class WaybillTrackingServiceTest {
         assertEquals(0, waybill.daysOpen());
         assertEquals(6, waybill.daysLeft());
         assertEquals(WaybillStatus.NEW, waybill.status());
-        assertTrue(waybill.inThisUpload());
     }
 
     @Test
@@ -58,8 +56,8 @@ class WaybillTrackingServiceTest {
     void becomesOverdueOnlyAfterMoreThanTheLimit() {
         trackOn(DAY_ONE, Set.of("J0001"), Set.of());
 
-        UnmatchedWaybill onDueDay = onlyWaybill(trackOn(DAY_ONE.plusDays(6), Set.of(), Set.of()));
-        UnmatchedWaybill dayAfter = onlyWaybill(trackOn(DAY_ONE.plusDays(7), Set.of(), Set.of()));
+        UnmatchedWaybill onDueDay = onlyWaybill(trackOn(DAY_ONE.plusDays(6), Set.of("J0001"), Set.of()));
+        UnmatchedWaybill dayAfter = onlyWaybill(trackOn(DAY_ONE.plusDays(7), Set.of("J0001"), Set.of()));
 
         assertEquals(WaybillStatus.DUE_TODAY, onDueDay.status());
         assertEquals(0, onDueDay.overdueDays());
@@ -69,22 +67,32 @@ class WaybillTrackingServiceTest {
     }
 
     @Test
-    void countsOverdueWaybillsFromEarlierUploads() {
+    void listsOnlyTheWaybillsInThisUpload() {
         trackOn(DAY_ONE, Set.of("OLD-1", "OLD-2"), Set.of());
 
         var result = trackOn(DAY_ONE.plusDays(10), Set.of("NEW-1"), Set.of());
 
-        assertEquals(2, result.overdueCount());
-        assertEquals(3, result.waybills().size());
-        assertFalse(find(result, "OLD-1").inThisUpload());
-        assertTrue(find(result, "NEW-1").inThisUpload());
+        assertEquals("NEW-1", onlyWaybill(result).waybillNo());
+        assertEquals(0, result.overdueCount());
+    }
+
+    @Test
+    void waybillFromAnEarlierUploadKeepsItsStartDateWhenUploadedAgain() {
+        trackOn(DAY_ONE, Set.of("OLD-1", "OLD-2"), Set.of());
+
+        var result = trackOn(DAY_ONE.plusDays(10), Set.of("OLD-1", "NEW-1"), Set.of());
+
+        assertEquals(2, result.waybills().size());
+        assertEquals(DAY_ONE, find(result, "OLD-1").startDate());
+        assertEquals(WaybillStatus.OVERDUE, find(result, "OLD-1").status());
+        assertEquals(1, result.overdueCount());
     }
 
     @Test
     void matchedWaybillStopsBeingTracked() {
         trackOn(DAY_ONE, Set.of("J0001", "J0002"), Set.of());
 
-        var result = trackOn(DAY_ONE.plusDays(2), Set.of(), Set.of("J0001"));
+        var result = trackOn(DAY_ONE.plusDays(2), Set.of("J0002"), Set.of("J0001"));
 
         assertEquals(List.of("J0002"), result.waybills().stream().map(UnmatchedWaybill::waybillNo).toList());
     }
@@ -122,19 +130,6 @@ class WaybillTrackingServiceTest {
 
         assertEquals(1, result.waybills().size());
         assertEquals("j0001", onlyWaybill(result).waybillNo());
-    }
-
-    @Test
-    void listsTheCurrentUploadEvenWhenOlderOpenWaybillsFillTheCap() {
-        List<String> older = new ArrayList<>();
-        for (int i = 0; i < WaybillTrackingService.MAX_OPEN_WAYBILLS; i++) {
-            older.add("OLD-%04d".formatted(i));
-        }
-        trackOn(DAY_ONE, older, Set.of());
-
-        var result = trackOn(DAY_ONE.plusDays(1), Set.of("FRESH-1"), Set.of());
-
-        assertTrue(find(result, "FRESH-1").inThisUpload());
     }
 
     @Test
@@ -221,16 +216,6 @@ class WaybillTrackingServiceTest {
                     entries.put(key(waybillNo), new Entry(existing.waybillNo(), existing.firstSeen(), false));
                 }
             }
-        }
-
-        @Override
-        public List<TrackedWaybill> findOpen(int limit) {
-            return entries.values().stream()
-                    .filter(Entry::open)
-                    .sorted(java.util.Comparator.comparing(Entry::firstSeen))
-                    .limit(limit)
-                    .map(e -> new TrackedWaybill(e.waybillNo(), e.firstSeen()))
-                    .toList();
         }
 
         @Override

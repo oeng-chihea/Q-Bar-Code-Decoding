@@ -149,9 +149,7 @@ export function App() {
 
             {/* Excel Preview Spreadsheet Table */}
             <ExcelPreviewTable
-              columns={results.columns}
               previewRows={results.previewRows}
-              matchedColumnName={results.matchedColumnName}
               totalRows={results.excelTotalRows}
               matchedCount={results.matchedRowsCount}
               reconciliationId={reconciliationId || ''}

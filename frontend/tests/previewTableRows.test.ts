@@ -28,7 +28,6 @@ const waybill = (waybillNo: string, overrides: Partial<Waybill> = {}): Waybill =
   daysLeft: 4,
   overdueDays: 0,
   status: 'ON_TRACK',
-  inThisUpload: true,
   ...overrides,
 });
 
@@ -43,7 +42,7 @@ const scan = (filename: string, decodedValue: string, overrides: Partial<Scan> =
 test('lists Excel rows first, then one row per unmatched waybill', () => {
   const rows = buildPreviewTableRows(
     [row(2, 'A-1', true), row(3, 'A-2', false)],
-    [waybill('W-1'), waybill('W-2', { status: 'OVERDUE', inThisUpload: false })],
+    [waybill('W-1'), waybill('W-2', { status: 'OVERDUE' })],
     [],
   );
 
@@ -86,7 +85,7 @@ test('links an unmatched waybill to its unmatched photo, and leaves earlier-uplo
   assert.deepEqual(rows[1].photos, [], 'a failed scan is never linked');
 });
 
-test('the spreadsheet table has View and tracking columns and no Status column or matched-only toggle', () => {
+test('the spreadsheet table has only the View, Over N days, Barcode, Customer name and Serial number columns', () => {
   const source = readFileSync(
     fileURLToPath(new URL('../src/features/reconciliation/components/ExcelPreviewTable.tsx', import.meta.url)),
     'utf8',
@@ -94,8 +93,17 @@ test('the spreadsheet table has View and tracking columns and no Status column o
 
   assert.match(source, /t\('preview\.colView'\)/);
   assert.match(source, /t\('preview\.colOver', \{ days: overdueAfterDays \}\)/);
-  assert.match(source, /t\('preview\.colUnmatchedWaybill'\)/);
+  assert.match(source, /t\('preview\.colBarcode'\)/);
   assert.match(source, /t\('preview\.colCustomerName'\)/);
+  assert.match(source, /t\('preview\.colSerial'\)/);
+  assert.match(source, /<SerialBarcode value=\{serial\} \/>/);
+
+  const barcode = readFileSync(
+    fileURLToPath(new URL('../src/features/reconciliation/components/SerialBarcode.tsx', import.meta.url)),
+    'utf8',
+  );
+  assert.match(barcode, /displayValue: true,/, 'the serial number is printed under the barcode');
+  assert.doesNotMatch(source, /row\.cells|row\.rowIndex|preview\.colUnmatchedWaybill/);
   assert.match(source, /<WaybillStatusBadge/);
   assert.match(source, /<ReceiptPreviewModal/);
   assert.match(source, /id=\{WAYBILL_TABLE_ID\}/);
@@ -136,7 +144,7 @@ test('shows the customer name from the receipt photo, or the saved one for an ea
   ];
   const rows = buildPreviewTableRows(
     [row(1, 'J01416824762', true), row(2, 'J0000', false)],
-    [waybill('W-1', { customerName: 'Old Name' }), waybill('W-2', { inThisUpload: false, customerName: 'Chan Lina' }), waybill('W-3')],
+    [waybill('W-1', { customerName: 'Old Name' }), waybill('W-2', { customerName: 'Chan Lina' }), waybill('W-3')],
     scans,
   );
 

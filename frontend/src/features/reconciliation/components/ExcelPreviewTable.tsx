@@ -1,5 +1,4 @@
-import { Fragment, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useState } from 'react';
 import {
   FileSpreadsheet,
   Download,
@@ -14,6 +13,7 @@ import type {
 import { downloadReconciliation } from '@/features/reconciliation/api/reconciliationApi';
 import { WaybillStatusBadge } from '@/features/reconciliation/components/WaybillStatusBadge';
 import { ReceiptPreviewModal } from '@/features/reconciliation/components/ReceiptPreviewModal';
+import { SerialBarcode } from '@/features/reconciliation/components/SerialBarcode';
 import { useReceiptPreview } from '@/features/reconciliation/hooks/useReceiptPreview';
 import { buildPreviewTableRows, customerNameOf } from '@/features/reconciliation/utils/previewTableRows';
 import type { PreviewTableRow, ReceiptPhoto } from '@/features/reconciliation/utils/previewTableRows';
@@ -21,10 +21,11 @@ import { findReceiptFile } from '@/features/reconciliation/utils/receiptFiles';
 import { WAYBILL_TABLE_ID } from '@/features/reconciliation/utils/waybillTracking';
 import { useTranslation } from '@/shared/i18n/i18n';
 
+// View, Over N days, Barcode, Customer name, Serial number
+const COLUMN_COUNT = 5;
+
 interface ExcelPreviewTableProps {
-  columns: string[];
   previewRows: ExcelRowPreview[];
-  matchedColumnName: string;
   totalRows: number;
   matchedCount: number;
   reconciliationId: string;
@@ -36,9 +37,7 @@ interface ExcelPreviewTableProps {
 }
 
 export const ExcelPreviewTable = ({
-  columns,
   previewRows,
-  matchedColumnName,
   totalRows,
   matchedCount,
   reconciliationId,
@@ -55,9 +54,6 @@ export const ExcelPreviewTable = ({
 
   const showTracking = unmatchedWaybills.length > 0;
   const tableRows = buildPreviewTableRows(previewRows, unmatchedWaybills, scanResults);
-  // Customer name sits right after the waybill column, or first among the Excel columns when there is none
-  const customerColumnAfter = columns.findIndex((col) => col.toLowerCase() === matchedColumnName.toLowerCase());
-  const fixedColumnCount = (showTracking ? 4 : 2) + 1;
 
   const handleDownload = async () => {
     if (!reconciliationId || isDownloading) return;
@@ -133,21 +129,53 @@ export const ExcelPreviewTable = ({
 
   const emptyCell = <span className="text-[10px] text-[#737887] font-normal">&mdash;</span>;
 
-  const withCustomerColumn = (excelCells: ReactNode[], customerCell: ReactNode) => {
-    const at = customerColumnAfter + 1;
-    return [
-      ...excelCells.slice(0, at),
-      <Fragment key="customer-name">{customerCell}</Fragment>,
-      ...excelCells.slice(at),
-    ];
-  };
-
   const renderCustomerCell = (tableRow: PreviewTableRow) => {
     const name = customerNameOf(tableRow);
     return (
       <td className="py-2.5 px-4 border-r border-[#24252B] whitespace-nowrap">
         {name ? <span className="text-[#F3F4F6]">{name}</span> : emptyCell}
       </td>
+    );
+  };
+
+  const renderBarcodeCell = (serial: string) => (
+    <td className="py-1.5 px-3.5 border-r border-[#24252B]">
+      {serial ? <SerialBarcode value={serial} /> : emptyCell}
+    </td>
+  );
+
+
+  // Phones get one card per row instead of the wide table: barcode and View on top, then name and status
+  const renderPhoneCard = (tableRow: PreviewTableRow) => {
+    const isWaybill = tableRow.kind === 'waybill';
+    const serial = isWaybill ? tableRow.waybill.waybillNo : tableRow.row.barcodeValue;
+    const tone = isWaybill
+      ? tableRow.waybill.status === 'OVERDUE' ? 'bg-[#2A1519]' : ''
+      : tableRow.row.matched ? 'bg-[#331418]/60' : '';
+    const name = customerNameOf(tableRow);
+    return (
+      <li key={tableRow.key} className={`min-w-0 p-3 space-y-3 ${tone}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 overflow-hidden">{serial ? <SerialBarcode value={serial} /> : emptyCell}</div>
+          {renderViewButton(tableRow.photos, serial)}
+        </div>
+        <dl className="grid grid-cols-2 gap-3 m-0">
+          <div className="min-w-0">
+            <dt className="text-[10px] font-semibold text-[#737887]">{t('preview.colCustomerName')}</dt>
+            <dd className="m-0 mt-0.5 break-words text-xs text-[#F3F4F6]">{name || emptyCell}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-[10px] font-semibold text-[#737887]">
+              {t('preview.colOver', { days: overdueAfterDays })}
+            </dt>
+            <dd className="m-0 mt-0.5">
+              {isWaybill ? (
+                <WaybillStatusBadge waybill={tableRow.waybill} overdueAfterDays={overdueAfterDays} />
+              ) : emptyCell}
+            </dd>
+          </div>
+        </dl>
+      </li>
     );
   };
 
@@ -188,58 +216,42 @@ export const ExcelPreviewTable = ({
         <p className="text-xs text-[#FCA5A5] m-0">{downloadError}</p>
       )}
 
+      {/* Phone Cards */}
+      <ul className="md:hidden min-w-0 m-0 p-0 list-none rounded-md border border-[#2B2D35] bg-[#16171B] divide-y divide-[#24252B]">
+        {tableRows.length === 0 ? (
+          <li className="py-8 text-center text-[#737887] text-xs">{t('preview.noRows')}</li>
+        ) : (
+          tableRows.map(renderPhoneCard)
+        )}
+      </ul>
+
       {/* Spreadsheet Table */}
-      <div className="min-w-0 overflow-x-auto rounded-md border border-[#2B2D35] bg-[#16171B]">
+      <div className="hidden md:block min-w-0 overflow-x-auto rounded-md border border-[#2B2D35] bg-[#16171B]">
         <table className="min-w-[640px] w-full text-xs text-left border-collapse">
           <thead>
             <tr className="bg-[#1C1D22] border-b border-[#2B2D35] text-[#8E929E]">
-              <th className="py-2.5 px-3.5 font-semibold w-12 text-[#737887] border-r border-[#2B2D35]">
-                #
-              </th>
               <th className="py-2.5 px-2 font-semibold w-16 text-center border-r border-[#2B2D35]">
                 {t('preview.colView')}
               </th>
-              {showTracking && (
-                <>
-                  <th className="py-2.5 px-3.5 font-semibold border-r border-[#2B2D35] whitespace-nowrap">
-                    {t('preview.colOver', { days: overdueAfterDays })}
-                  </th>
-                  <th className="py-2.5 px-3.5 font-semibold border-r border-[#2B2D35] whitespace-nowrap">
-                    {t('preview.colUnmatchedWaybill')}
-                  </th>
-                </>
-              )}
-              {withCustomerColumn(columns.map((col, idx) => {
-                const isTarget = col.toLowerCase() === matchedColumnName.toLowerCase();
-                return (
-                  <th
-                    key={idx}
-                    className={`py-2.5 px-4 font-semibold border-r border-[#2B2D35] whitespace-nowrap ${
-                      isTarget ? 'text-[#A0E3E2] bg-[#162729]/50' : ''
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>{col}</span>
-                      {isTarget && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#143827] text-[#34D399] border border-[#1E4D36]">
-                          {t('preview.targetLabel')}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                );
-              }), (
-                <th className="py-2.5 px-4 font-semibold border-r border-[#2B2D35] whitespace-nowrap">
-                  {t('preview.colCustomerName')}
-                </th>
-              ))}
+              <th className="py-2.5 px-3.5 font-semibold border-r border-[#2B2D35] whitespace-nowrap">
+                {t('preview.colOver', { days: overdueAfterDays })}
+              </th>
+              <th className="py-2.5 px-3.5 font-semibold border-r border-[#2B2D35] whitespace-nowrap">
+                {t('preview.colBarcode')}
+              </th>
+              <th className="py-2.5 px-4 font-semibold border-r border-[#2B2D35] whitespace-nowrap">
+                {t('preview.colCustomerName')}
+              </th>
+              <th className="py-2.5 px-3.5 font-semibold whitespace-nowrap">
+                {t('preview.colSerial')}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#24252B]">
             {tableRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length + fixedColumnCount}
+                  colSpan={COLUMN_COUNT}
                   className="py-8 text-center text-[#737887] text-xs"
                 >
                   {t('preview.noRows')}
@@ -257,7 +269,6 @@ export const ExcelPreviewTable = ({
                         isOverdue ? 'bg-[#2A1519] hover:bg-[#33191E]' : 'hover:bg-[#1C1D22]'
                       }`}
                     >
-                      <td className="py-2 px-3.5 border-r border-[#24252B]" />
                       <td className="py-0.5 px-2 text-center border-r border-[#24252B]">
                         {renderViewButton(tableRow.photos, waybill.waybillNo)}
                       </td>
@@ -267,18 +278,11 @@ export const ExcelPreviewTable = ({
                       >
                         <WaybillStatusBadge waybill={waybill} overdueAfterDays={overdueAfterDays} />
                       </td>
-                      <td className="py-2 px-3.5 border-r border-[#24252B] whitespace-nowrap font-mono font-semibold">
+                      {renderBarcodeCell(waybill.waybillNo)}
+                      {renderCustomerCell(tableRow)}
+                      <td className="py-2 px-3.5 whitespace-nowrap font-mono font-semibold">
                         <span className={isOverdue ? 'text-[#FB7185]' : 'text-white'}>{waybill.waybillNo}</span>
-                        {!waybill.inThisUpload && (
-                          <span className="block text-[10px] font-sans font-normal text-[#737887]">
-                            {t('waybill.earlierUpload')}
-                          </span>
-                        )}
                       </td>
-                      {withCustomerColumn(
-                        columns.map((_, cIdx) => <td key={cIdx} className="py-2.5 px-4 border-r border-[#24252B]" />),
-                        renderCustomerCell(tableRow),
-                      )}
                     </tr>
                   );
                 }
@@ -293,36 +297,19 @@ export const ExcelPreviewTable = ({
                         : 'hover:bg-[#1C1D22] text-[#D1D5DB]'
                     }`}
                   >
-                    <td className="py-2 px-3.5 text-[#737887] font-mono border-r border-[#24252B]">
-                      {row.rowIndex}
-                    </td>
                     <td className="py-0.5 px-2 text-center border-r border-[#24252B]">
                       {renderViewButton(tableRow.photos, row.barcodeValue)}
                     </td>
-                    {showTracking && (
-                      <>
-                        <td className="py-2 px-3.5 border-r border-[#24252B]">{emptyCell}</td>
-                        <td className="py-2 px-3.5 border-r border-[#24252B]">{emptyCell}</td>
-                      </>
-                    )}
-                    {withCustomerColumn(columns.map((col, cIdx) => {
-                      const val = row.cells[col] || '';
-                      const isTarget = col.toLowerCase() === matchedColumnName.toLowerCase();
-                      return (
-                        <td
-                          key={cIdx}
-                          className={`py-2.5 px-4 border-r border-[#24252B] whitespace-nowrap font-mono ${
-                            isTarget && row.matched
-                              ? 'text-[#FCA5A5] font-bold bg-[#541920]/40'
-                              : isTarget
-                              ? 'text-[#F3F4F6]'
-                              : ''
-                          }`}
-                        >
-                          {val || <span className="text-[#5A5E6B] italic font-sans">null</span>}
-                        </td>
-                      );
-                    }), renderCustomerCell(tableRow))}
+                    <td className="py-2 px-3.5 border-r border-[#24252B]">{emptyCell}</td>
+                    {renderBarcodeCell(row.barcodeValue)}
+                    {renderCustomerCell(tableRow)}
+                    <td
+                      className={`py-2 px-3.5 whitespace-nowrap font-mono ${
+                        row.matched ? 'text-[#FCA5A5] font-bold' : 'text-[#F3F4F6]'
+                      }`}
+                    >
+                      {row.barcodeValue || emptyCell}
+                    </td>
                   </tr>
                 );
               })

@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-test('preview renders backend cell values without outlet localization', () => {
+test('preview shows the row serial number as sent by the backend, without outlet localization', () => {
   const componentPath = fileURLToPath(new URL(
     '../src/features/reconciliation/components/ExcelPreviewTable.tsx',
     import.meta.url,
   ));
   const source = readFileSync(componentPath, 'utf8');
 
-  assert.match(source, /const val = row\.cells\[col\] \|\| '';/);
+  assert.match(source, /\{row\.barcodeValue \|\| emptyCell\}/);
   assert.doesNotMatch(source, /localizePreviewCellValue|previewLocalization/);
 });
 

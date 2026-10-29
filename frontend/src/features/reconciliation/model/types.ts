@@ -49,7 +49,6 @@ export interface UnmatchedWaybill {
   daysLeft: number;
   overdueDays: number;
   status: WaybillStatus;
-  inThisUpload: boolean;
   // From the receipt scanned in this or an earlier upload; missing when no receipt name is known
   customerName?: string | null;
 }

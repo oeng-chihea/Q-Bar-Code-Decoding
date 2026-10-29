@@ -14,17 +14,15 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * Remembers waybills that were scanned but missing from the Excel table, and reports which of them
- * have stayed unmatched for longer than the overdue limit. Matched waybills are never tracked.
+ * Remembers waybills that were scanned but missing from the Excel table, and reports how long the current
+ * upload's ones have stayed unmatched. Matched waybills are never tracked. Waybills from earlier uploads stay
+ * in the store so their start date is kept, but they are only reported again when an upload contains them.
  * The store is optional: without a database this service reports itself as unavailable and
  * reconciliation carries on unchanged.
  */
@@ -33,7 +31,6 @@ public class WaybillTrackingService {
     private static final Logger log = LoggerFactory.getLogger(WaybillTrackingService.class);
 
     static final int MAX_WAYBILL_LENGTH = 64;
-    static final int MAX_OPEN_WAYBILLS = 1000;
 
     public record TrackingResult(boolean available, int overdueAfterDays, List<UnmatchedWaybill> waybills) {
         public long overdueCount() {
@@ -59,7 +56,7 @@ public class WaybillTrackingService {
     }
 
     /**
-     * Records this upload's result and returns every open unmatched waybill, oldest first.
+     * Records this upload's result and returns this upload's unmatched waybills, oldest first.
      * Never throws: a database problem only makes tracking unavailable for this upload.
      *
      * @param unmatchedCodes codes scanned from images that matched no Excel row
@@ -81,17 +78,8 @@ public class WaybillTrackingService {
             waybillStore.markMatched(matched, today);
             waybillStore.recordUnmatched(unmatched, today, reconciliationId);
 
-            // The current upload's waybills are always listed, even when older open ones exceed the cap
-            Map<String, WaybillTrackingStore.TrackedWaybill> open = new LinkedHashMap<>();
-            for (var tracked : waybillStore.findOpenByWaybillNos(unmatched)) {
-                open.putIfAbsent(key(tracked.waybillNo()), tracked);
-            }
-            for (var tracked : waybillStore.findOpen(MAX_OPEN_WAYBILLS)) {
-                open.putIfAbsent(key(tracked.waybillNo()), tracked);
-            }
-
-            List<UnmatchedWaybill> waybills = open.values().stream()
-                    .map(tracked -> toWaybill(tracked, today, unmatched))
+            List<UnmatchedWaybill> waybills = waybillStore.findOpenByWaybillNos(unmatched).stream()
+                    .map(tracked -> toWaybill(tracked, today))
                     .sorted(Comparator.comparing(UnmatchedWaybill::startDate)
                             .thenComparing(UnmatchedWaybill::waybillNo))
                     .toList();
@@ -110,8 +98,7 @@ public class WaybillTrackingService {
         return new TrackingResult(false, overdueAfterDays, List.of());
     }
 
-    private UnmatchedWaybill toWaybill(WaybillTrackingStore.TrackedWaybill tracked, LocalDate today,
-                                       Set<String> currentUpload) {
+    private UnmatchedWaybill toWaybill(WaybillTrackingStore.TrackedWaybill tracked, LocalDate today) {
         long daysOpen = Math.max(0, ChronoUnit.DAYS.between(tracked.firstSeenDate(), today));
         WaybillStatus status;
         if (daysOpen > overdueAfterDays) {
@@ -130,8 +117,7 @@ public class WaybillTrackingService {
                 daysOpen,
                 Math.max(0, overdueAfterDays - daysOpen),
                 Math.max(0, daysOpen - overdueAfterDays),
-                status,
-                currentUpload.contains(tracked.waybillNo()));
+                status);
     }
 
     /** Trimmed, de-duplicated (case-insensitively, like the database column) and limited to what the column can hold. */
@@ -150,9 +136,5 @@ public class WaybillTrackingService {
             }
         }
         return cleaned;
-    }
-
-    private static String key(String waybillNo) {
-        return waybillNo.toLowerCase(Locale.ROOT);
     }
 }
