@@ -3,6 +3,7 @@ package com.excel.reconciler.service;
 import com.excel.reconciler.model.BarcodeResult;
 import com.excel.reconciler.model.ReconciliationResponse;
 import com.excel.reconciler.model.UnmatchedWaybill;
+import com.excel.reconciler.model.WaybillStatus;
 import com.excel.reconciler.util.SpreadsheetFileValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -49,8 +51,7 @@ public class ReconciliationService {
     public ReconciliationResponse reconcile(MultipartFile excelFile,
                                            List<MultipartFile> imageFiles,
                                            String columnName,
-                                           boolean highlightFullRow,
-                                           String reconciliationId) throws Exception {
+                                           boolean highlightFullRow) throws Exception {
         long startTime = System.currentTimeMillis();
 
         if (excelFile == null || excelFile.isEmpty()) {
@@ -124,7 +125,7 @@ public class ReconciliationService {
 
         // 4. Align primary decoded value to matched code if present, and calculate unmatched codes
         Set<String> unmatchedCodes = new LinkedHashSet<>();
-        Set<String> matchedImageCodes = new LinkedHashSet<>();
+        Map<String, BarcodeResult> unmatchedScans = new LinkedHashMap<>();
         Set<String> matchedCodesSet = excelResult.getMatchedCodes();
         Set<String> claimedRowCodes = new HashSet<>();
         int unmatchedImagesCount = 0;
@@ -164,7 +165,6 @@ public class ReconciliationService {
                 if (claimedRowCodes.add(ExcelHighlightService.normalize(matchedRowCode))) {
                     // First photo of this Excel row
                     res.setMatched(true);
-                    matchedImageCodes.addAll(candidates);
                 } else {
                     // The row already has a photo, so this repeat is a leftover image, not a matched one
                     res.setMatched(false);
@@ -175,20 +175,20 @@ public class ReconciliationService {
                 // Image did not match any row in Excel
                 res.setMatched(false);
                 unmatchedImagesCount++;
-                if (res.getDecodedValue() != null && !res.getDecodedValue().isBlank()) {
-                    unmatchedCodes.add(res.getDecodedValue().trim());
-                } else if (!candidates.isEmpty()) {
-                    unmatchedCodes.add(candidates.get(0));
+                if (!candidates.isEmpty()) {
+                    String code = candidates.get(0);
+                    unmatchedCodes.add(code);
+                    // Keep the photo whose receipt date was read when the same code is photographed twice
+                    unmatchedScans.merge(code, res, (kept, next) -> kept.getCreateDate() != null ? kept : next);
                 }
             }
         }
 
-        // 5. Track unmatched waybills over time and list the overdue ones in the downloaded workbook
-        WaybillTrackingService.TrackingResult tracking =
-                waybillTrackingService.track(unmatchedCodes, matchedImageCodes, reconciliationId);
-        List<UnmatchedWaybill> unmatchedWaybills = withCustomerNames(tracking.waybills(), scanResults);
+        // 5. Count each unmatched serial number's days since its receipt's CREATED date
+        List<UnmatchedWaybill> unmatchedWaybills = unmatchedWaybills(unmatchedScans);
+        int overdueAfterDays = waybillTrackingService.overdueAfterDays();
         byte[] workbookWithTracking = appendUnmatchedSheet(
-                excelResult.getModifiedExcelBytes(), unmatchedWaybills, tracking.overdueAfterDays());
+                excelResult.getModifiedExcelBytes(), unmatchedWaybills, overdueAfterDays);
 
         // 6. Build response
         String base64Excel = Base64.getEncoder().encodeToString(workbookWithTracking);
@@ -221,10 +221,11 @@ public class ReconciliationService {
         response.setDownloadFileName(downloadName);
         response.setExcelSourceType(excelSourceType);
         response.setExecutionTimeMs(executionTimeMs);
-        response.setTrackingAvailable(tracking.available());
-        response.setOverdueAfterDays(tracking.overdueAfterDays());
+        response.setOverdueAfterDays(overdueAfterDays);
         response.setUnmatchedWaybills(unmatchedWaybills);
-        response.setOverdueCount((int) tracking.overdueCount());
+        response.setOverdueCount((int) unmatchedWaybills.stream()
+                .filter(waybill -> waybill.status() == WaybillStatus.OVERDUE)
+                .count());
 
         log.info("Reconciliation complete: {} images scanned, {} decoded, {} matched in Excel (Sheet '{}') in {}ms",
                 response.getTotalImages(), decodedImagesCount, excelResult.getMatchedRowsCount(),
@@ -274,37 +275,46 @@ public class ReconciliationService {
     }
 
     /**
-     * Each unmatched serial number gets its customer's name: from this upload's receipts, or else from
-     * the receipt saved when it was scanned in an earlier upload.
+     * Each unmatched serial number with its receipt's CREATED date and customer name, oldest first. Both come
+     * from this upload's receipt, or else from the receipt saved when it was scanned in an earlier upload.
      */
-    private List<UnmatchedWaybill> withCustomerNames(List<UnmatchedWaybill> waybills, List<BarcodeResult> scanResults) {
-        if (waybills == null || waybills.isEmpty()) {
-            return waybills == null ? List.of() : waybills;
-        }
-        Map<String, String> names = new HashMap<>();
-        for (BarcodeResult res : scanResults) {
-            if (res.getDecodedValue() != null && res.getCustomerName() != null) {
-                names.putIfAbsent(ExcelHighlightService.normalize(res.getDecodedValue()), res.getCustomerName());
-            }
-        }
-        List<String> missing = waybills.stream()
-                .map(UnmatchedWaybill::waybillNo)
-                .filter(serial -> !names.containsKey(ExcelHighlightService.normalize(serial)))
+    private List<UnmatchedWaybill> unmatchedWaybills(Map<String, BarcodeResult> scansBySerial) {
+        Map<String, ReceiptDetailStore.SavedReceipt> saved = savedReceipts(scansBySerial.entrySet().stream()
+                .filter(entry -> entry.getValue().getCreateDate() == null || entry.getValue().getCustomerName() == null)
+                .map(Map.Entry::getKey)
+                .toList());
+        return scansBySerial.entrySet().stream()
+                .map(entry -> {
+                    BarcodeResult scan = entry.getValue();
+                    ReceiptDetailStore.SavedReceipt receipt = saved.get(ExcelHighlightService.normalize(entry.getKey()));
+                    LocalDate createDate = scan.getCreateDate() != null
+                            ? LocalDate.parse(scan.getCreateDate())
+                            : receipt == null ? null : receipt.date();
+                    String customerName = scan.getCustomerName() != null
+                            ? scan.getCustomerName()
+                            : receipt == null || receipt.customerName() == null || receipt.customerName().isBlank()
+                            ? null : receipt.customerName();
+                    return waybillTrackingService.evaluate(entry.getKey(), createDate, customerName);
+                })
+                .sorted(Comparator.comparing(UnmatchedWaybill::createDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(UnmatchedWaybill::waybillNo))
                 .toList();
-        if (!missing.isEmpty() && receiptStore.isPresent()) {
-            try {
-                receiptStore.get().findReceipts(missing).forEach((serial, receipt) -> {
-                    if (receipt.customerName() != null && !receipt.customerName().isBlank()) {
-                        names.putIfAbsent(ExcelHighlightService.normalize(serial), receipt.customerName());
-                    }
-                });
-            } catch (Exception e) {
-                log.warn("Could not load customer names for unmatched serial numbers: {}", e.getMessage());
-            }
+    }
+
+    /** Receipts saved in earlier uploads, keyed by normalized serial number; empty without a database. */
+    private Map<String, ReceiptDetailStore.SavedReceipt> savedReceipts(List<String> serialNumbers) {
+        if (serialNumbers.isEmpty() || receiptStore.isEmpty()) {
+            return Map.of();
         }
-        return waybills.stream()
-                .map(waybill -> waybill.withCustomerName(names.get(ExcelHighlightService.normalize(waybill.waybillNo()))))
-                .toList();
+        try {
+            Map<String, ReceiptDetailStore.SavedReceipt> bySerial = new HashMap<>();
+            receiptStore.get().findReceipts(serialNumbers)
+                    .forEach((serial, receipt) -> bySerial.put(ExcelHighlightService.normalize(serial), receipt));
+            return bySerial;
+        } catch (Exception e) {
+            log.warn("Could not load saved receipts for unmatched serial numbers: {}", e.getMessage());
+            return Map.of();
+        }
     }
 
     private boolean isInTable(String code, List<List<String>> rows) {

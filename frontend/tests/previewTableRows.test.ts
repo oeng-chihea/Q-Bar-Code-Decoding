@@ -22,7 +22,7 @@ const row = (rowIndex: number, barcodeValue: string, matched: boolean): Row => (
 
 const waybill = (waybillNo: string, overrides: Partial<Waybill> = {}): Waybill => ({
   waybillNo,
-  startDate: '2026-10-20',
+  createDate: '2026-10-20',
   dueDate: '2026-10-26',
   daysOpen: 2,
   daysLeft: 4,

@@ -39,12 +39,13 @@ export interface ExcelRowPreview {
   matched: boolean;
 }
 
-export type WaybillStatus = 'NEW' | 'ON_TRACK' | 'DUE_TODAY' | 'OVERDUE';
+export type WaybillStatus = 'NEW' | 'ON_TRACK' | 'DUE_TODAY' | 'OVERDUE' | 'NO_DATE';
 
 export interface UnmatchedWaybill {
   waybillNo: string;
-  startDate: string;
-  dueDate: string;
+  // The receipt's CREATED date; both dates are null (status NO_DATE) when it could not be read
+  createDate: string | null;
+  dueDate: string | null;
   daysOpen: number;
   daysLeft: number;
   overdueDays: number;
@@ -73,8 +74,7 @@ export interface ReconciliationResponse {
   downloadFileName: string;
   excelSourceType?: 'EXCEL_TABLE_IMAGE';
   executionTimeMs: number;
-  // Waybill tracking is optional: older backends and backends without a database omit it
-  trackingAvailable?: boolean;
+  // Older backends omit waybill tracking
   overdueAfterDays?: number;
   overdueCount?: number;
   unmatchedWaybills?: UnmatchedWaybill[];

@@ -9,7 +9,7 @@ type Waybill = Parameters<typeof findWaybill>[0][number];
 
 const waybill = (overrides: Partial<Waybill>): Waybill => ({
   waybillNo: 'J0001',
-  startDate: '2026-10-05',
+  createDate: '2026-10-05',
   dueDate: '2026-10-11',
   daysOpen: 0,
   daysLeft: 6,
@@ -40,21 +40,23 @@ test('translates the waybill tracking labels in Khmer with the configured day li
   assert.equal(translate('waybill.statusOnTrack', { days: 2 }), 'នៅសល់ 2 ថ្ងៃ');
   assert.equal(translate('waybill.statusOverdue', { limit: 6, days: 7 }), 'លើស 6 ថ្ងៃ (+7)');
   assert.equal(translate('preview.colOver', { days: 6 }), 'Over 6 days');
+  assert.equal(translate('preview.waybillDates', { created: '2026-10-15', due: '2026-10-21' }),
+    'Created 2026-10-15 · Due 2026-10-21');
 });
 
-test('models optional tracking fields so older backends without a database still work', () => {
+test('models optional tracking fields so older backends still work', () => {
   const types = readFileSync(
     fileURLToPath(new URL('../src/features/reconciliation/model/types.ts', import.meta.url)),
     'utf8',
   );
-  assert.match(types, /export type WaybillStatus = 'NEW' \| 'ON_TRACK' \| 'DUE_TODAY' \| 'OVERDUE';/);
-  assert.match(types, /trackingAvailable\?: boolean;/);
+  assert.match(types, /export type WaybillStatus = 'NEW' \| 'ON_TRACK' \| 'DUE_TODAY' \| 'OVERDUE' \| 'NO_DATE';/);
+  assert.match(types, /createDate: string \| null;/);
   assert.match(types, /unmatchedWaybills\?: UnmatchedWaybill\[\];/);
 });
 
-test('shows tracking only when the backend reports it is available and has waybills', () => {
+test('shows tracking whenever the upload has unmatched waybills', () => {
   const app = readFileSync(fileURLToPath(new URL('../src/app/App.tsx', import.meta.url)), 'utf8');
-  assert.match(app, /results\?\.trackingAvailable === true && waybills\.length > 0/);
+  assert.match(app, /const showWaybillTracking = waybills\.length > 0;/);
   assert.match(app, /<OverdueWaybillAlert/);
   assert.match(app, /unmatchedWaybills=\{showWaybillTracking \? waybills : \[\]\}/);
   assert.doesNotMatch(app, /UnmatchedWaybillTable/);

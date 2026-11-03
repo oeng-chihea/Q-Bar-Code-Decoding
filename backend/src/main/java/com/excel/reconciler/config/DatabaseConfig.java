@@ -1,9 +1,7 @@
 package com.excel.reconciler.config;
 
 import com.excel.reconciler.jdbc.JdbcReceiptDetailStore;
-import com.excel.reconciler.jdbc.JdbcWaybillTrackingStore;
 import com.excel.reconciler.service.ReceiptDetailStore;
-import com.excel.reconciler.service.WaybillTrackingStore;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,11 +33,6 @@ public class DatabaseConfig {
         // Do not fail startup when MySQL is unreachable; reconciliation keeps working without it
         config.setInitializationFailTimeout(-1);
         return new HikariDataSource(config);
-    }
-
-    @Bean
-    public WaybillTrackingStore waybillTrackingStore(DataSource dataSource) {
-        return new JdbcWaybillTrackingStore(new JdbcTemplate(dataSource));
     }
 
     @Bean

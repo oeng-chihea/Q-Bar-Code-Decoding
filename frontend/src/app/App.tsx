@@ -29,7 +29,7 @@ export function App() {
 
   const waybills = results?.unmatchedWaybills ?? [];
   const overdueAfterDays = results?.overdueAfterDays ?? 0;
-  const showWaybillTracking = results?.trackingAvailable === true && waybills.length > 0;
+  const showWaybillTracking = waybills.length > 0;
 
   const handleViewOverdue = () => {
     document.getElementById(WAYBILL_TABLE_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' });

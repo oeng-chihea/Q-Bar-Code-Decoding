@@ -9,7 +9,9 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
@@ -31,14 +33,16 @@ import static org.mockito.Mockito.*;
 
 class ReconciliationServiceTest {
 
-    private final WaybillTrackingService tracking = mock(WaybillTrackingService.class);
+    private static final ZoneId PHNOM_PENH = ZoneId.of("Asia/Phnom_Penh");
+
+    // Today is Nov 3, 2026 in Cambodia
+    private final WaybillTrackingService tracking = new WaybillTrackingService(6,
+            Clock.fixed(LocalDate.of(2026, 11, 3).atTime(12, 0).atZone(PHNOM_PENH).toInstant(), PHNOM_PENH));
     private final UnmatchedWaybillSheetWriter sheetWriter = mock(UnmatchedWaybillSheetWriter.class);
 
     private ReconciliationService newService(BarcodeDecoderService barcodeDecoder,
                                              ExcelHighlightService highlighter,
                                              ExcelImageExtractorService extractor) throws IOException {
-        when(tracking.track(any(), any(), any()))
-                .thenReturn(new WaybillTrackingService.TrackingResult(false, 6, List.of()));
         when(sheetWriter.append(any(), any(), anyInt())).thenAnswer(call -> call.getArgument(0));
         return new ReconciliationService(barcodeDecoder, highlighter, extractor, tracking, sheetWriter,
                 Optional.empty());
@@ -64,7 +68,7 @@ class ReconciliationServiceTest {
                         List.of("Barcode"), Collections.emptySet(), Collections.emptyList()));
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
-        var response = service.reconcile(tableImage, List.of(), "Barcode", false, "rec-1");
+        var response = service.reconcile(tableImage, List.of(), "Barcode", false);
 
         assertEquals("EXCEL_TABLE_IMAGE", response.getExcelSourceType());
         assertEquals("inventory_highlighted.xlsx", response.getDownloadFileName());
@@ -85,7 +89,7 @@ class ReconciliationServiceTest {
                 new IllegalArgumentException("Barcode images are not supported in the Excel section."));
 
         var error = assertThrows(IllegalArgumentException.class, () ->
-                service.reconcile(barcodeImage, List.of(), "Barcode", false, "rec-1"));
+                service.reconcile(barcodeImage, List.of(), "Barcode", false));
 
         assertEquals("Barcode images are not supported in the Excel section.", error.getMessage());
         verifyNoInteractions(highlighter);
@@ -117,7 +121,7 @@ class ReconciliationServiceTest {
                         List.of("Waybill Number"), java.util.Set.of("J01396943696"), Collections.emptyList()));
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
-        var response = service.reconcile(tableImage, List.of(scanImage), "Waybill Number", false, "rec-1");
+        var response = service.reconcile(tableImage, List.of(scanImage), "Waybill Number", false);
 
         assertEquals(1, response.getMatchedRowsCount());
         assertEquals(0, response.getUnmatchedImagesCount());
@@ -127,7 +131,7 @@ class ReconciliationServiceTest {
     }
 
     @Test
-    void tracksUnmatchedAndMatchedCodesAndExposesTheTrackingResult() throws Exception {
+    void countsUnmatchedSerialNumbersFromTheirReceiptsCreatedDate() throws Exception {
         BarcodeDecoderService barcodeDecoder = mock(BarcodeDecoderService.class);
         ExcelHighlightService highlighter = mock(ExcelHighlightService.class);
         ExcelImageExtractorService extractor = mock(ExcelImageExtractorService.class);
@@ -137,9 +141,11 @@ class ReconciliationServiceTest {
                 new ExcelImageExtractorService.ExtractedExcelData(
                         true, false, null, "Sheet", List.of("Waybill Number"),
                         List.of(List.of("J0001")), new byte[]{1, 2, 3}));
+        BarcodeResult unmatchedScan = new BarcodeResult("2.jpg", "J9999", List.of("J9999"), "ZXING", true, "CODE_128", null);
+        unmatchedScan.setCreateDate("2026-10-15");
         when(barcodeDecoder.decodeBatch(any())).thenReturn(List.of(
                 new BarcodeResult("1.jpg", "J0001", List.of("J0001"), "ZXING", true, "CODE_128", null),
-                new BarcodeResult("2.jpg", "J9999", List.of("J9999"), "ZXING", true, "CODE_128", null),
+                unmatchedScan,
                 new BarcodeResult("3.jpg", null, Collections.emptyList(), "FAILED", false, null, "no barcode")));
         when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
@@ -147,16 +153,12 @@ class ReconciliationServiceTest {
                         List.of("Waybill Number"), Set.of("J0001"), Collections.emptyList()));
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
-        UnmatchedWaybill overdue = new UnmatchedWaybill("J9999", LocalDate.of(2026, 9, 20),
-                LocalDate.of(2026, 9, 26), 14, 0, 8, WaybillStatus.OVERDUE);
-        when(tracking.track(any(), any(), any()))
-                .thenReturn(new WaybillTrackingService.TrackingResult(true, 6, List.of(overdue)));
 
-        var response = service.reconcile(tableImage, List.of(), "Waybill Number", false, "rec-1");
+        var response = service.reconcile(tableImage, List.of(), "Waybill Number", false);
 
-        // Only waybills that were actually read are tracked; the image with no barcode is not
-        verify(tracking).track(eq(Set.of("J9999")), eq(Set.of("J0001")), eq("rec-1"));
-        assertTrue(response.isTrackingAvailable());
+        // Oct 15 to Nov 3 is 19 days: 13 over the 6-day limit. Matched and unread images are not listed.
+        UnmatchedWaybill overdue = new UnmatchedWaybill("J9999", LocalDate.of(2026, 10, 15),
+                LocalDate.of(2026, 10, 21), 19, 0, 13, WaybillStatus.OVERDUE, null);
         assertEquals(6, response.getOverdueAfterDays());
         assertEquals(1, response.getOverdueCount());
         assertEquals(List.of(overdue), response.getUnmatchedWaybills());
@@ -183,10 +185,9 @@ class ReconciliationServiceTest {
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
         when(sheetWriter.append(any(), any(), anyInt())).thenThrow(new IOException("disk full"));
 
-        var response = service.reconcile(tableImage, List.of(), "Waybill Number", false, "rec-1");
+        var response = service.reconcile(tableImage, List.of(), "Waybill Number", false);
 
         assertArrayEquals(new byte[]{4, 5}, Base64.getDecoder().decode(response.getHighlightedExcelBase64()));
-        assertFalse(response.isTrackingAvailable());
     }
 
     private static BarcodeResult misreadReceipt(String barcode, String printed) {
@@ -217,7 +218,7 @@ class ReconciliationServiceTest {
                         List.of("Waybill Number"), Set.of("J01421594677"), Collections.emptyList()));
 
         newService(barcodeDecoder, highlighter, extractor)
-                .reconcile(tableImage, List.of(tableImage), "Waybill Number", false, "rec-1");
+                .reconcile(tableImage, List.of(tableImage), "Waybill Number", false);
 
         ArgumentCaptor<Set<String>> codes = ArgumentCaptor.forClass(Set.class);
         verify(highlighter).highlightMatches(any(ByteArrayInputStream.class), codes.capture(), any(), eq(false), anyMap());
@@ -260,7 +261,7 @@ class ReconciliationServiceTest {
     }
 
     @Test
-    void unmatchedSerialNumbersGetTheirCustomerNamesFromThisUploadOrEarlierReceipts() throws Exception {
+    void unmatchedSerialNumbersTakeTheirDateAndNameFromThisUploadOrEarlierReceipts() throws Exception {
         BarcodeDecoderService barcodeDecoder = mock(BarcodeDecoderService.class);
         ExcelHighlightService highlighter = mock(ExcelHighlightService.class);
         ExcelImageExtractorService extractor = mock(ExcelImageExtractorService.class);
@@ -272,29 +273,29 @@ class ReconciliationServiceTest {
                         true, false, null, "Sheet", List.of("Waybill Number"),
                         List.of(List.of("J0001")), new byte[]{1, 2, 3}));
         BarcodeResult unmatchedScan = new BarcodeResult("2.jpg", "J9999", List.of("J9999"), "ZXING", true, "CODE_128", null);
+        unmatchedScan.setCreateDate("2026-10-28");
         unmatchedScan.setCustomerName("Nhim Sarey");
-        when(barcodeDecoder.decodeBatch(any())).thenReturn(List.of(unmatchedScan));
+        when(barcodeDecoder.decodeBatch(any())).thenReturn(List.of(unmatchedScan,
+                new BarcodeResult("3.jpg", "J8888", List.of("J8888"), "ZXING", true, "CODE_128", null),
+                new BarcodeResult("4.jpg", "J7777", List.of("J7777"), "ZXING", true, "CODE_128", null)));
         when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
                         new byte[]{4, 5}, 1, 0, "Waybill Number", "Sheet",
                         List.of("Waybill Number"), Set.of(), Collections.emptyList()));
         when(sheetWriter.append(any(), any(), anyInt())).thenAnswer(call -> call.getArgument(0));
-        UnmatchedWaybill thisUpload = new UnmatchedWaybill("J9999", LocalDate.of(2026, 10, 28),
-                LocalDate.of(2026, 11, 3), 0, 6, 0, WaybillStatus.NEW);
-        UnmatchedWaybill earlier = new UnmatchedWaybill("J8888", LocalDate.of(2026, 10, 20),
-                LocalDate.of(2026, 10, 26), 8, 0, 2, WaybillStatus.OVERDUE);
-        UnmatchedWaybill unknown = new UnmatchedWaybill("J7777", LocalDate.of(2026, 10, 20),
-                LocalDate.of(2026, 10, 26), 8, 0, 2, WaybillStatus.OVERDUE);
-        when(tracking.track(any(), any(), any()))
-                .thenReturn(new WaybillTrackingService.TrackingResult(true, 6, List.of(thisUpload, earlier, unknown)));
         when(store.findReceipts(any())).thenReturn(Map.of(
                 "J8888", new ReceiptDetailStore.SavedReceipt(LocalDate.of(2026, 10, 19), "Oct 19, 2026", "Sok Dara")));
 
         var response = new ReconciliationService(barcodeDecoder, highlighter, extractor, tracking, sheetWriter,
-                Optional.of(store)).reconcile(tableImage, List.of(tableImage), "Waybill Number", false, "rec-1");
+                Optional.of(store)).reconcile(tableImage, List.of(tableImage), "Waybill Number", false);
 
-        List<UnmatchedWaybill> expected = List.of(thisUpload.withCustomerName("Nhim Sarey"),
-                earlier.withCustomerName("Sok Dara"), unknown);
+        // Oldest CREATED date first; the one without any date comes last
+        List<UnmatchedWaybill> expected = List.of(
+                new UnmatchedWaybill("J8888", LocalDate.of(2026, 10, 19), LocalDate.of(2026, 10, 25),
+                        15, 0, 9, WaybillStatus.OVERDUE, "Sok Dara"),
+                new UnmatchedWaybill("J9999", LocalDate.of(2026, 10, 28), LocalDate.of(2026, 11, 3),
+                        6, 0, 0, WaybillStatus.DUE_TODAY, "Nhim Sarey"),
+                new UnmatchedWaybill("J7777", null, null, 0, 0, 0, WaybillStatus.NO_DATE, null));
         assertEquals(expected, response.getUnmatchedWaybills());
         verify(store).findReceipts(List.of("J8888", "J7777"));
         verify(sheetWriter).append(any(), eq(expected), eq(6));
@@ -323,7 +324,7 @@ class ReconciliationServiceTest {
                         List.of("Waybill Number"), java.util.Set.of("J0001", "J0002"), Collections.emptyList()));
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
-        var response = service.reconcile(tableImage, List.of(photo, photo, photo, photo), "Waybill Number", false, "rec-1");
+        var response = service.reconcile(tableImage, List.of(photo, photo, photo, photo), "Waybill Number", false);
 
         var scans = response.getScanResults();
         assertTrue(scans.get(0).isMatched());

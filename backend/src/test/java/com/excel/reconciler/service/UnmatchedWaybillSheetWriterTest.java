@@ -2,6 +2,7 @@ package com.excel.reconciler.service;
 
 import com.excel.reconciler.model.UnmatchedWaybill;
 import com.excel.reconciler.model.WaybillStatus;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -23,11 +24,13 @@ class UnmatchedWaybillSheetWriterTest {
     private final UnmatchedWaybill overdue = new UnmatchedWaybill("J0001", LocalDate.of(2026, 9, 20),
             LocalDate.of(2026, 9, 26), 15, 0, 9, WaybillStatus.OVERDUE, "Nhim Sarey");
     private final UnmatchedWaybill onTrack = new UnmatchedWaybill("J0002", LocalDate.of(2026, 10, 3),
-            LocalDate.of(2026, 10, 9), 2, 4, 0, WaybillStatus.ON_TRACK);
+            LocalDate.of(2026, 10, 9), 2, 4, 0, WaybillStatus.ON_TRACK, null);
+    private final UnmatchedWaybill noDate = new UnmatchedWaybill("J0003", null, null, 0, 0, 0,
+            WaybillStatus.NO_DATE, null);
 
     @Test
     void addsASheetWithOneRowPerWaybillAndKeepsTheOriginalSheet() throws Exception {
-        byte[] result = writer.append(workbookWithSheet("Sheet1"), List.of(overdue, onTrack), 6);
+        byte[] result = writer.append(workbookWithSheet("Sheet1"), List.of(overdue, onTrack, noDate), 6);
 
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(result))) {
             assertEquals(2, workbook.getNumberOfSheets());
@@ -37,6 +40,7 @@ class UnmatchedWaybillSheetWriterTest {
             Sheet sheet = workbook.getSheet("Unmatched serial numbers");
             assertEquals("Serial Number", sheet.getRow(0).getCell(0).getStringCellValue());
             assertEquals("Customer name", sheet.getRow(0).getCell(1).getStringCellValue());
+            assertEquals("Create date", sheet.getRow(0).getCell(2).getStringCellValue());
             assertEquals("Over 6 days", sheet.getRow(0).getCell(5).getStringCellValue());
 
             assertEquals("J0001", sheet.getRow(1).getCell(0).getStringCellValue());
@@ -53,6 +57,12 @@ class UnmatchedWaybillSheetWriterTest {
             assertEquals("No (4 days left)", sheet.getRow(2).getCell(5).getStringCellValue());
             assertEquals(IndexedColors.AUTOMATIC.getIndex(),
                     sheet.getRow(2).getCell(0).getCellStyle().getFillForegroundColor());
+
+            assertEquals("J0003", sheet.getRow(3).getCell(0).getStringCellValue());
+            assertEquals("", sheet.getRow(3).getCell(2).getStringCellValue());
+            assertEquals("", sheet.getRow(3).getCell(3).getStringCellValue());
+            assertEquals(CellType.BLANK, sheet.getRow(3).getCell(4).getCellType());
+            assertEquals("No date", sheet.getRow(3).getCell(5).getStringCellValue());
         }
     }
 

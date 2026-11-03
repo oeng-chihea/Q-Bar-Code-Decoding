@@ -26,7 +26,6 @@ public class ReconciliationResponse {
     private List<UnmatchedWaybill> unmatchedWaybills = List.of();
     private int overdueCount;
     private int overdueAfterDays;
-    private boolean trackingAvailable;
 
     public ReconciliationResponse() {
     }
@@ -205,13 +204,5 @@ public class ReconciliationResponse {
 
     public void setOverdueAfterDays(int overdueAfterDays) {
         this.overdueAfterDays = overdueAfterDays;
-    }
-
-    public boolean isTrackingAvailable() {
-        return trackingAvailable;
-    }
-
-    public void setTrackingAvailable(boolean trackingAvailable) {
-        this.trackingAvailable = trackingAvailable;
     }
 }

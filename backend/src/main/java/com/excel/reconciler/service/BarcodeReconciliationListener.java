@@ -46,8 +46,7 @@ public class BarcodeReconciliationListener {
                     excelFile,
                     imageFiles,
                     request.getColumnName(),
-                    request.isHighlightFullRow(),
-                    reconciliationId
+                    request.isHighlightFullRow()
             );
 
             registry.markStage(reconciliationId, "Saving highlighted workbook");

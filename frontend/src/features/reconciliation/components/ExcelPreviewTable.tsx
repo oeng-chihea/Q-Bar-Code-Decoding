@@ -274,7 +274,11 @@ export const ExcelPreviewTable = ({
                       </td>
                       <td
                         className="py-2 px-3.5 border-r border-[#24252B]"
-                        title={t('preview.waybillDates', { start: waybill.startDate, due: waybill.dueDate })}
+                        title={
+                          waybill.createDate
+                            ? t('preview.waybillDates', { created: waybill.createDate, due: waybill.dueDate ?? '' })
+                            : undefined
+                        }
                       >
                         <WaybillStatusBadge waybill={waybill} overdueAfterDays={overdueAfterDays} />
                       </td>

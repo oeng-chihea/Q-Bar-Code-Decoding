@@ -6,6 +6,7 @@ const STATUS_STYLES: Record<UnmatchedWaybill['status'], string> = {
   ON_TRACK: 'bg-[#143827] text-[#34D399] border-[#1E4D36]',
   DUE_TODAY: 'bg-[#3B2A0B] text-[#FBBF24] border-[#5C4310]',
   OVERDUE: 'bg-[#461B21] text-[#FB7185] border-[#5C1D24]',
+  NO_DATE: 'bg-[#24252B] text-[#A1A1AA] border-[#3F3F46]',
 };
 
 interface WaybillStatusBadgeProps {
@@ -21,6 +22,7 @@ export const WaybillStatusBadge = ({ waybill, overdueAfterDays }: WaybillStatusB
     ON_TRACK: t('waybill.statusOnTrack', { days: waybill.daysLeft }),
     DUE_TODAY: t('waybill.statusDueToday'),
     OVERDUE: t('waybill.statusOverdue', { limit: overdueAfterDays, days: waybill.overdueDays }),
+    NO_DATE: t('waybill.statusNoDate'),
   }[waybill.status];
 
   return (

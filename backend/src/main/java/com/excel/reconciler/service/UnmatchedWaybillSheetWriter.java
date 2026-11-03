@@ -18,6 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 
 /** Adds an "Unmatched serial numbers" sheet to the highlighted workbook; the existing sheets are left untouched. */
 @Service
@@ -37,7 +38,7 @@ public class UnmatchedWaybillSheetWriter {
             CellStyle headerStyle = headerStyle(workbook);
             CellStyle overdueStyle = overdueStyle(workbook);
 
-            String[] headers = {"Serial Number", "Customer name", "Start date", "Due date", "Days open",
+            String[] headers = {"Serial Number", "Customer name", "Create date", "Due date", "Days open",
                     "Over " + overdueAfterDays + " days"};
             Row headerRow = sheet.createRow(0);
             for (int column = 0; column < headers.length; column++) {
@@ -52,9 +53,12 @@ public class UnmatchedWaybillSheetWriter {
                 Row row = sheet.createRow(index + 1);
                 row.createCell(0).setCellValue(waybill.waybillNo());
                 row.createCell(1).setCellValue(waybill.customerName() == null ? "" : waybill.customerName());
-                row.createCell(2).setCellValue(waybill.startDate().toString());
-                row.createCell(3).setCellValue(waybill.dueDate().toString());
-                row.createCell(4).setCellValue(waybill.daysOpen());
+                row.createCell(2).setCellValue(Objects.toString(waybill.createDate(), ""));
+                row.createCell(3).setCellValue(Objects.toString(waybill.dueDate(), ""));
+                Cell daysOpen = row.createCell(4);
+                if (waybill.createDate() != null) {
+                    daysOpen.setCellValue(waybill.daysOpen());
+                }
                 row.createCell(5).setCellValue(overdueLabel(waybill));
                 if (waybill.status() == WaybillStatus.OVERDUE) {
                     for (int column = 0; column < headers.length; column++) {
@@ -69,9 +73,11 @@ public class UnmatchedWaybillSheetWriter {
     }
 
     private static String overdueLabel(UnmatchedWaybill waybill) {
-        return waybill.status() == WaybillStatus.OVERDUE
-                ? "Yes (+" + waybill.overdueDays() + ")"
-                : "No (" + waybill.daysLeft() + " days left)";
+        return switch (waybill.status()) {
+            case OVERDUE -> "Yes (+" + waybill.overdueDays() + ")";
+            case NO_DATE -> "No date";
+            default -> "No (" + waybill.daysLeft() + " days left)";
+        };
     }
 
     private static String uniqueSheetName(Workbook workbook) {

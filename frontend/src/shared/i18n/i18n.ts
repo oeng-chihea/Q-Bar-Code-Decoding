@@ -58,7 +58,7 @@ const khmer = {
   'preview.noReceipt': 'No receipt photo',
   'preview.repeatPhoto': 'Another photo of this serial number: {{filename}}',
   'preview.unmatchedWaybills': '{{count}} unmatched serial numbers',
-  'preview.waybillDates': 'Start {{start}} · Due {{due}}',
+  'preview.waybillDates': 'Created {{created}} · Due {{due}}',
   'matches.title': 'បាកូដដែលត្រូវគ្នា',
   'matches.subtitle': 'បង្ហាញលេខបាកូដពីរូបភាពដែលត្រូវគ្នានឹងធាតុក្នុងសៀវភៅបញ្ជី',
   'matches.search': 'ស្វែងរកបាកូដដែលត្រូវគ្នា...',
@@ -108,6 +108,7 @@ const khmer = {
   'waybill.statusOnTrack': 'នៅសល់ {{days}} ថ្ងៃ',
   'waybill.statusDueToday': 'ដល់ថ្ងៃកំណត់ថ្ងៃនេះ',
   'waybill.statusOverdue': 'លើស {{limit}} ថ្ងៃ (+{{days}})',
+  'waybill.statusNoDate': 'គ្មានកាលបរិច្ឆេទ CREATED',
 } as const;
 
 export type TranslationKey = keyof typeof khmer;
