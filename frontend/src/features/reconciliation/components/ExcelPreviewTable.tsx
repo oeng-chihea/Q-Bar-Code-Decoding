@@ -24,6 +24,12 @@ import { useTranslation } from '@/shared/i18n/i18n';
 // View, Over N days, Barcode, Customer name, Serial number
 const COLUMN_COUNT = 5;
 
+// Green tone for every row that matched, whether or not it is over N days
+const MATCHED_ROW = 'bg-[#0F3324] hover:bg-[#14402D] text-[#D1FAE5]';
+const MATCHED_CARD = 'bg-[#0F3324]';
+const MATCHED_NAME = 'text-[#A7F3D0]';
+const MATCHED_SERIAL = 'text-[#6EE7B7] font-bold';
+
 interface ExcelPreviewTableProps {
   previewRows: ExcelRowPreview[];
   totalRows: number;
@@ -129,11 +135,14 @@ export const ExcelPreviewTable = ({
 
   const emptyCell = <span className="text-[10px] text-[#737887] font-normal">&mdash;</span>;
 
+  const isMatchedRow = (tableRow: PreviewTableRow) =>
+    tableRow.kind === 'unmatched' || tableRow.row.matched === true;
+
   const renderCustomerCell = (tableRow: PreviewTableRow) => {
     const name = customerNameOf(tableRow);
     return (
       <td className="py-2.5 px-4 border-r border-[#24252B] whitespace-nowrap">
-        {name ? <span className="text-[#F3F4F6]">{name}</span> : emptyCell}
+        {name ? <span className={isMatchedRow(tableRow) ? MATCHED_NAME : 'text-[#F3F4F6]'}>{name}</span> : emptyCell}
       </td>
     );
   };
@@ -147,11 +156,10 @@ export const ExcelPreviewTable = ({
 
   // Phones get one card per row instead of the wide table: barcode and View on top, then name and status
   const renderPhoneCard = (tableRow: PreviewTableRow) => {
-    const isWaybill = tableRow.kind === 'waybill';
+    const isWaybill = tableRow.kind === 'unmatched';
     const serial = isWaybill ? tableRow.waybill.waybillNo : tableRow.row.barcodeValue;
-    const tone = isWaybill
-      ? tableRow.waybill.status === 'OVERDUE' ? 'bg-[#2A1519]' : ''
-      : tableRow.row.matched ? 'bg-[#331418]/60' : '';
+    const isMatched = isMatchedRow(tableRow);
+    const tone = isMatched ? MATCHED_CARD : '';
     const name = customerNameOf(tableRow);
     return (
       <li key={tableRow.key} className={`min-w-0 p-3 space-y-3 ${tone}`}>
@@ -162,7 +170,7 @@ export const ExcelPreviewTable = ({
         <dl className="grid grid-cols-2 gap-3 m-0">
           <div className="min-w-0">
             <dt className="text-[10px] font-semibold text-[#737887]">{t('preview.colCustomerName')}</dt>
-            <dd className="m-0 mt-0.5 break-words text-xs text-[#F3F4F6]">{name || emptyCell}</dd>
+            <dd className={`m-0 mt-0.5 break-words text-xs ${isMatched ? MATCHED_NAME : 'text-[#F3F4F6]'}`}>{name || emptyCell}</dd>
           </div>
           <div className="min-w-0">
             <dt className="text-[10px] font-semibold text-[#737887]">
@@ -259,16 +267,10 @@ export const ExcelPreviewTable = ({
               </tr>
             ) : (
               tableRows.map((tableRow) => {
-                if (tableRow.kind === 'waybill') {
+                if (tableRow.kind === 'unmatched') {
                   const { waybill } = tableRow;
-                  const isOverdue = waybill.status === 'OVERDUE';
                   return (
-                    <tr
-                      key={tableRow.key}
-                      className={`transition text-[#D1D5DB] ${
-                        isOverdue ? 'bg-[#2A1519] hover:bg-[#33191E]' : 'hover:bg-[#1C1D22]'
-                      }`}
-                    >
+                    <tr key={tableRow.key} className={`transition font-medium ${MATCHED_ROW}`}>
                       <td className="py-0.5 px-2 text-center border-r border-[#24252B]">
                         {renderViewButton(tableRow.photos, waybill.waybillNo)}
                       </td>
@@ -284,8 +286,8 @@ export const ExcelPreviewTable = ({
                       </td>
                       {renderBarcodeCell(waybill.waybillNo)}
                       {renderCustomerCell(tableRow)}
-                      <td className="py-2 px-3.5 whitespace-nowrap font-mono font-semibold">
-                        <span className={isOverdue ? 'text-[#FB7185]' : 'text-white'}>{waybill.waybillNo}</span>
+                      <td className={`py-2 px-3.5 whitespace-nowrap font-mono ${MATCHED_SERIAL}`}>
+                        {waybill.waybillNo}
                       </td>
                     </tr>
                   );
@@ -297,7 +299,7 @@ export const ExcelPreviewTable = ({
                     key={tableRow.key}
                     className={`transition ${
                       row.matched
-                        ? 'bg-[#331418]/60 text-[#FEE2E2] hover:bg-[#40181D] font-medium'
+                        ? `${MATCHED_ROW} font-medium`
                         : 'hover:bg-[#1C1D22] text-[#D1D5DB]'
                     }`}
                   >
@@ -309,7 +311,7 @@ export const ExcelPreviewTable = ({
                     {renderCustomerCell(tableRow)}
                     <td
                       className={`py-2 px-3.5 whitespace-nowrap font-mono ${
-                        row.matched ? 'text-[#FCA5A5] font-bold' : 'text-[#F3F4F6]'
+                        row.matched ? MATCHED_SERIAL : 'text-[#F3F4F6]'
                       }`}
                     >
                       {row.barcodeValue || emptyCell}

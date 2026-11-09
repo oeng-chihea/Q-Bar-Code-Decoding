@@ -47,7 +47,7 @@ test('lists Excel rows first, then one row per unmatched waybill', () => {
   );
 
   assert.deepEqual(rows.map((r) => r.key), ['row:2', 'row:3', 'waybill:W-1', 'waybill:W-2']);
-  assert.deepEqual(rows.map((r) => r.kind), ['excel', 'excel', 'waybill', 'waybill']);
+  assert.deepEqual(rows.map((r) => r.kind), ['matched', 'matched', 'unmatched', 'unmatched']);
 });
 
 test('links a matched Excel row to its receipt, ignoring spacing and case in the code', () => {

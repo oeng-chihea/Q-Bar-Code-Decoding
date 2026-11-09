@@ -6,8 +6,8 @@ export interface ReceiptPhoto {
 }
 
 export type PreviewTableRow =
-  | { kind: 'excel'; key: string; row: ExcelRowPreview; photos: ReceiptPhoto[] }
-  | { kind: 'waybill'; key: string; waybill: UnmatchedWaybill; photos: ReceiptPhoto[] };
+  | { kind: 'matched'; key: string; row: ExcelRowPreview; photos: ReceiptPhoto[] }
+  | { kind: 'unmatched'; key: string; waybill: UnmatchedWaybill; photos: ReceiptPhoto[] };
 
 const normalizeCode = (value: string | undefined) =>
   (value || '').trim().replace(/[\s_\-/:()!']+/g, '').toLowerCase();
@@ -51,7 +51,7 @@ export function buildPreviewTableRows(
   scanResults: BarcodeResult[],
 ): PreviewTableRow[] {
   const excelRows: PreviewTableRow[] = previewRows.map((row) => ({
-    kind: 'excel',
+    kind: 'matched',
     key: `row:${row.rowIndex}`,
     row,
     photos: row.matched
@@ -60,7 +60,7 @@ export function buildPreviewTableRows(
   }));
 
   const waybillRows: PreviewTableRow[] = unmatchedWaybills.map((waybill) => ({
-    kind: 'waybill',
+    kind: 'unmatched',
     key: `waybill:${waybill.waybillNo}`,
     waybill,
     photos: findPhotos(scanResults, waybill.waybillNo, (item) => item.matched !== true && !item.duplicate),
@@ -73,5 +73,5 @@ export function buildPreviewTableRows(
 export function customerNameOf(tableRow: PreviewTableRow): string | undefined {
   const fromPhoto = tableRow.photos.find(({ item }) => item.customerName)?.item.customerName;
   if (fromPhoto) return fromPhoto;
-  return tableRow.kind === 'waybill' ? tableRow.waybill.customerName || undefined : undefined;
+  return tableRow.kind === 'unmatched' ? tableRow.waybill.customerName || undefined : undefined;
 }
