@@ -136,7 +136,7 @@ export const ExcelPreviewTable = ({
   const emptyCell = <span className="text-[10px] text-[#737887] font-normal">&mdash;</span>;
 
   const isMatchedRow = (tableRow: PreviewTableRow) =>
-    tableRow.kind === 'unmatched' || tableRow.row.matched === true;
+    tableRow.kind === 'matched' && tableRow.row.matched === true;
 
   const renderCustomerCell = (tableRow: PreviewTableRow) => {
     const name = customerNameOf(tableRow);
@@ -270,7 +270,7 @@ export const ExcelPreviewTable = ({
                 if (tableRow.kind === 'unmatched') {
                   const { waybill } = tableRow;
                   return (
-                    <tr key={tableRow.key} className={`transition font-medium ${MATCHED_ROW}`}>
+                    <tr key={tableRow.key} className="transition hover:bg-[#1C1D22] text-[#D1D5DB]">
                       <td className="py-0.5 px-2 text-center border-r border-[#24252B]">
                         {renderViewButton(tableRow.photos, waybill.waybillNo)}
                       </td>
@@ -286,7 +286,8 @@ export const ExcelPreviewTable = ({
                       </td>
                       {renderBarcodeCell(waybill.waybillNo)}
                       {renderCustomerCell(tableRow)}
-                      <td className={`py-2 px-3.5 whitespace-nowrap font-mono ${MATCHED_SERIAL}`}>
+                      <td className="py-2 px-3.5 whitespace-nowrap font-mono text-[#F3F4F6]">
+
                         {waybill.waybillNo}
                       </td>
                     </tr>
