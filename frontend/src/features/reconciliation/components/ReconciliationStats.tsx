@@ -1,5 +1,5 @@
 import {
-  CheckCircle2,
+
   FileSpreadsheet,
   Zap,
   CheckCheck,
@@ -14,10 +14,7 @@ interface ReconciliationStatsProps {
 
 export const ReconciliationStats = ({ results }: ReconciliationStatsProps) => {
   const { t } = useTranslation();
-  const matchRate =
-    results.excelTotalRows > 0
-      ? Math.round((results.matchedRowsCount / results.excelTotalRows) * 100)
-      : 0;
+
 
   return (
     <div className="min-w-0 space-y-4 text-left">
