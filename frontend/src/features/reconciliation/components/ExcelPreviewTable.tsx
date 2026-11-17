@@ -266,6 +266,9 @@ export const ExcelPreviewTable = ({
                 </td>
               </tr>
             ) : (
+
+// return table rows colors
+
               tableRows.map((tableRow) => {
                 if (tableRow.kind === 'unmatched') {
                   const { waybill } = tableRow;

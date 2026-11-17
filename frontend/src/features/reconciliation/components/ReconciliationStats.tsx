@@ -69,19 +69,7 @@ export const ReconciliationStats = ({ results }: ReconciliationStatsProps) => {
           </div>
         </div>
 
-        {/* Card 3: Matched & Highlighted in Red */}
-        <div className="min-w-0 bg-[#1C1D22] border border-[#461B21] rounded-md p-3 sm:p-4 bg-[#23171B]/50">
-          <div className="flex items-center justify-between text-[#FB7185] text-xs mb-2">
-            <span className="min-w-0 break-words">{t('results.highlightedRed')}</span>
-            <CheckCircle2 className="w-4 h-4 text-[#FB7185]" />
-          </div>
-          <div className="text-2xl font-bold text-[#FB7185]">{results.matchedRowsCount}</div>
-          <div className="min-w-0 break-words text-[11px] text-[#FCA5A5] mt-1 font-medium">
-            {t('results.matchRate', { rate: matchRate })}
-          </div>
-        </div>
-
-        {/* Card 4: Duration */}
+        {/* Card 3: Duration */}
         <div className="min-w-0 bg-[#1C1D22] border border-[#2B2D35] rounded-md p-3 sm:p-4">
           <div className="flex items-center justify-between text-[#8E929E] text-xs mb-2">
             <span className="min-w-0 break-words">{t('results.processingTime')}</span>
