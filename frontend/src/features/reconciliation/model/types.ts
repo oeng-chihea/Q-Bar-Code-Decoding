@@ -63,7 +63,6 @@ export interface ReconciliationResponse {
   matchedColumnName: string;
   matchedColumnConfidence?: number;
   identifierColumnIndexes?: number[];
-  activeSheetName?: string;
   columns: string[];
   scanResults: BarcodeResult[];
   allDecodedCodes: string[];

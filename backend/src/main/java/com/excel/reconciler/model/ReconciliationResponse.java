@@ -12,7 +12,6 @@ public class ReconciliationResponse {
     private String matchedColumnName;
     private double matchedColumnConfidence;
     private List<Integer> identifierColumnIndexes = List.of();
-    private String activeSheetName;
     private List<String> columns;
     private List<BarcodeResult> scanResults;
     private Set<String> allDecodedCodes;
@@ -92,14 +91,6 @@ public class ReconciliationResponse {
 
     public void setIdentifierColumnIndexes(List<Integer> identifierColumnIndexes) {
         this.identifierColumnIndexes = identifierColumnIndexes;
-    }
-
-    public String getActiveSheetName() {
-        return activeSheetName;
-    }
-
-    public void setActiveSheetName(String activeSheetName) {
-        this.activeSheetName = activeSheetName;
     }
 
     public List<String> getColumns() {

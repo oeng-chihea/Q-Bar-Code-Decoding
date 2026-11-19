@@ -19,7 +19,6 @@ public class ExcelHighlightService {
         private final int totalRows;
         private final int matchedRowsCount;
         private final String resolvedColumnName;
-        private final String activeSheetName;
         private final List<String> columnHeaders;
         private final Set<String> matchedCodes;
         private final List<ExcelRowPreview> previewRows;
@@ -27,15 +26,15 @@ public class ExcelHighlightService {
         private final List<Integer> identifierColumnIndexes;
 
         public ExcelProcessingResult(byte[] modifiedExcelBytes, int totalRows, int matchedRowsCount,
-                                     String resolvedColumnName, String activeSheetName,
+                                     String resolvedColumnName,
                                      List<String> columnHeaders, Set<String> matchedCodes,
                                      List<ExcelRowPreview> previewRows) {
-            this(modifiedExcelBytes, totalRows, matchedRowsCount, resolvedColumnName, activeSheetName,
+            this(modifiedExcelBytes, totalRows, matchedRowsCount, resolvedColumnName,
                     columnHeaders, matchedCodes, previewRows, 0.0, List.of());
         }
 
         public ExcelProcessingResult(byte[] modifiedExcelBytes, int totalRows, int matchedRowsCount,
-                                     String resolvedColumnName, String activeSheetName,
+                                     String resolvedColumnName,
                                      List<String> columnHeaders, Set<String> matchedCodes,
                                      List<ExcelRowPreview> previewRows, double matchedColumnConfidence,
                                      List<Integer> identifierColumnIndexes) {
@@ -43,7 +42,6 @@ public class ExcelHighlightService {
             this.totalRows = totalRows;
             this.matchedRowsCount = matchedRowsCount;
             this.resolvedColumnName = resolvedColumnName;
-            this.activeSheetName = activeSheetName;
             this.columnHeaders = columnHeaders;
             this.matchedCodes = matchedCodes;
             this.previewRows = previewRows;
@@ -66,10 +64,6 @@ public class ExcelHighlightService {
 
         public String getResolvedColumnName() {
             return resolvedColumnName;
-        }
-
-        public String getActiveSheetName() {
-            return activeSheetName;
         }
 
         public List<String> getColumnHeaders() {
@@ -264,7 +258,6 @@ public class ExcelHighlightService {
                 totalDataRowsAcrossSheets,
                 totalMatchedRowsAcrossSheets,
                 primaryHeaderInfo.resolvedColName,
-                primarySheet.getSheetName(),
                 primaryHeaderInfo.headers,
                 allMatchedCodes,
                 primaryPreviewRows,

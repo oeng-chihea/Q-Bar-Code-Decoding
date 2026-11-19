@@ -1,28 +1,42 @@
 package com.excel.reconciler.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.DefaultIndexedColorMap;
-import org.apache.poi.xssf.usermodel.XSSFCellStyle;
-import org.apache.poi.xssf.usermodel.XSSFColor;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
+
 import javax.imageio.ImageIO;
+
+import org.apache.poi.ss.usermodel.BorderStyle;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.FillPatternType;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.IndexedColors;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.util.WorkbookUtil;
+import org.apache.poi.xssf.usermodel.DefaultIndexedColorMap;
+import org.apache.poi.xssf.usermodel.XSSFCellStyle;
+import org.apache.poi.xssf.usermodel.XSSFColor;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class ExcelImageExtractorService {
@@ -413,8 +427,7 @@ public class ExcelImageExtractorService {
                         null, Collections.emptyList(), Collections.emptyList(), null);
             }
 
-            String sheetName = node.path("sheetName").asText("Scanned Inventory");
-            if (sheetName.isBlank()) sheetName = "Scanned Inventory";
+            String sheetName = node.path("sheetName").asText();
 
             if (headers.isEmpty()) {
                 headers = List.of("Column 1", "Column 2", "Column 3");
@@ -731,7 +744,8 @@ public class ExcelImageExtractorService {
         validateExtractedRowWidths(headers, rows);
         rows = normalizeExtractedRows(headers, rows);
         try (Workbook workbook = new XSSFWorkbook()) {
-            Sheet sheet = workbook.createSheet(sheetName != null && !sheetName.isBlank() ? sheetName : "Inventory");
+            Sheet sheet = workbook.createSheet(sheetName == null || sheetName.isBlank()
+                    ? "Scanned Inventory" : WorkbookUtil.createSafeSheetName(sheetName));
 
             // Header Style
             CellStyle headerStyle = workbook.createCellStyle();

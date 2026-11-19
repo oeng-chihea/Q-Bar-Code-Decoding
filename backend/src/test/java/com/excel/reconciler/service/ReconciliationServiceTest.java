@@ -64,7 +64,7 @@ class ReconciliationServiceTest {
         when(barcodeDecoder.decodeBatch(any())).thenReturn(Collections.emptyList());
         when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), eq("Barcode"), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
-                        new byte[]{4, 5}, 1, 0, "Barcode", "Scanned Inventory",
+                        new byte[]{4, 5}, 1, 0, "Barcode",
                         List.of("Barcode"), Collections.emptySet(), Collections.emptyList()));
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
@@ -117,7 +117,7 @@ class ReconciliationServiceTest {
 
         when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
-                        new byte[]{4, 5}, 1, 1, "Waybill Number", "Sheet",
+                        new byte[]{4, 5}, 1, 1, "Waybill Number",
                         List.of("Waybill Number"), java.util.Set.of("J01396943696"), Collections.emptyList()));
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
@@ -149,7 +149,7 @@ class ReconciliationServiceTest {
                 new BarcodeResult("3.jpg", null, Collections.emptyList(), "FAILED", false, null, "no barcode")));
         when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
-                        new byte[]{4, 5}, 1, 1, "Waybill Number", "Sheet",
+                        new byte[]{4, 5}, 1, 1, "Waybill Number",
                         List.of("Waybill Number"), Set.of("J0001"), Collections.emptyList()));
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
@@ -179,7 +179,7 @@ class ReconciliationServiceTest {
         when(barcodeDecoder.decodeBatch(any())).thenReturn(Collections.emptyList());
         when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
-                        new byte[]{4, 5}, 1, 0, "Waybill Number", "Sheet",
+                        new byte[]{4, 5}, 1, 0, "Waybill Number",
                         List.of("Waybill Number"), Collections.emptySet(), Collections.emptyList()));
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);
@@ -214,7 +214,7 @@ class ReconciliationServiceTest {
         when(highlighter.findMatchingDecodedCode(any(), anyMap())).thenCallRealMethod();
         when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
-                        new byte[]{4, 5}, rows.size(), 1, "Waybill Number", "Sheet",
+                        new byte[]{4, 5}, rows.size(), 1, "Waybill Number",
                         List.of("Waybill Number"), Set.of("J01421594677"), Collections.emptyList()));
 
         newService(barcodeDecoder, highlighter, extractor)
@@ -280,7 +280,7 @@ class ReconciliationServiceTest {
                 new BarcodeResult("4.jpg", "J7777", List.of("J7777"), "ZXING", true, "CODE_128", null)));
         when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
-                        new byte[]{4, 5}, 1, 0, "Waybill Number", "Sheet",
+                        new byte[]{4, 5}, 1, 0, "Waybill Number",
                         List.of("Waybill Number"), Set.of(), Collections.emptyList()));
         when(sheetWriter.append(any(), any(), anyInt())).thenAnswer(call -> call.getArgument(0));
         when(store.findReceipts(any())).thenReturn(Map.of(
@@ -320,7 +320,7 @@ class ReconciliationServiceTest {
                 new com.excel.reconciler.model.BarcodeResult("4.jpg", "J9999", List.of("J9999"), "ZXING", true, "CODE_128", null)));
         when(highlighter.highlightMatches(any(ByteArrayInputStream.class), anySet(), any(), eq(false), anyMap()))
                 .thenReturn(new ExcelHighlightService.ExcelProcessingResult(
-                        new byte[]{4, 5}, 2, 2, "Waybill Number", "Sheet",
+                        new byte[]{4, 5}, 2, 2, "Waybill Number",
                         List.of("Waybill Number"), java.util.Set.of("J0001", "J0002"), Collections.emptyList()));
 
         ReconciliationService service = newService(barcodeDecoder, highlighter, extractor);

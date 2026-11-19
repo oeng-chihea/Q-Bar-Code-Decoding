@@ -1,9 +1,9 @@
 import {
 
   FileSpreadsheet,
-  Zap,
   CheckCheck,
   ScanLine,
+  Check,
 } from 'lucide-react';
 import type { ReconciliationResponse } from '@/features/reconciliation/model/types';
 import { useTranslation } from '@/shared/i18n/i18n';
@@ -58,26 +58,22 @@ export const ReconciliationStats = ({ results }: ReconciliationStatsProps) => {
           </div>
           <div className="text-2xl font-bold text-white">{results.excelTotalRows}</div>
           <div className="min-w-0 break-words text-[11px] text-[#8E929E] mt-1">
-            {results.activeSheetName ? (
-              <span>{t('results.sheet')}: <strong className="text-[#F3F4F6]">{results.activeSheetName}</strong></span>
-            ) : (
-              <span>{t('results.target')}: <strong className="text-[#F3F4F6]">{results.matchedColumnName}</strong></span>
-            )}
+            {t('results.rows')}
           </div>
         </div>
 
-        {/* Card 3: Duration */}
-        <div className="min-w-0 bg-[#1C1D22] border border-[#2B2D35] rounded-md p-3 sm:p-4">
+        {/* Card 3: matches */}
+        <div className=" border border-[#2B2D35] rounded-md p-3 sm:p-4 transition bg-[#0F3324] hover:bg-[#14402D]">
           <div className="flex items-center justify-between text-[#8E929E] text-xs mb-2">
-            <span className="min-w-0 break-words">{t('results.processingTime')}</span>
-            <Zap className="w-4 h-4 text-[#A0E3E2]" />
+            <span className="min-w-0 break-words">{t('matches.image')}</span>
+            <Check className="w-4 h-4 text-[#34D399]" />
           </div>
           <div className="text-2xl font-bold text-[#A0E3E2]">
-            {results.executionTimeMs}
-            <span className="text-sm font-normal text-[#8E929E]"> ms</span>
+            {results.matchedRowsCount}
+            <span className="text-sm font-normal text-[#8E929E]">/{results.totalImages}</span>
           </div>
           <div className="min-w-0 break-words text-[11px] text-[#8E929E] mt-1">
-            {t('results.fast')}
+            {t('results.match')}
           </div>
         </div>
       </div>

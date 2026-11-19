@@ -102,7 +102,7 @@ public class BarcodeReconciliationControllerTest {
                         {
                           "isExcelTable": true,
                           "isBarcodeImage": false,
-                          "sheetName": "Scanned Inventory",
+                          "sheetName": "",
                           "headers": ["Product", "Barcode"],
                           "rows": [{"values": ["Phone", "SKU-9901"]}]
                         }
@@ -196,7 +196,6 @@ public class BarcodeReconciliationControllerTest {
             org.junit.jupiter.api.Assertions.assertEquals(2, result.getTotalRows());
             org.junit.jupiter.api.Assertions.assertEquals(1, result.getMatchedRowsCount());
             org.junit.jupiter.api.Assertions.assertTrue(result.getMatchedCodes().contains("840192837401"));
-            org.junit.jupiter.api.Assertions.assertEquals("Extracted Inventory", result.getActiveSheetName());
         }
     }
 

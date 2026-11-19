@@ -210,7 +210,6 @@ public class ReconciliationService {
         response.setMatchedColumnName(excelResult.getResolvedColumnName());
         response.setMatchedColumnConfidence(excelResult.getMatchedColumnConfidence());
         response.setIdentifierColumnIndexes(excelResult.getIdentifierColumnIndexes());
-        response.setActiveSheetName(excelResult.getActiveSheetName());
         response.setColumns(excelResult.getColumnHeaders());
         response.setScanResults(scanResults);
         response.setAllDecodedCodes(allDecodedCodes);
@@ -227,9 +226,8 @@ public class ReconciliationService {
                 .filter(waybill -> waybill.status() == WaybillStatus.OVERDUE)
                 .count());
 
-        log.info("Reconciliation complete: {} images scanned, {} decoded, {} matched in Excel (Sheet '{}') in {}ms",
-                response.getTotalImages(), decodedImagesCount, excelResult.getMatchedRowsCount(),
-                excelResult.getActiveSheetName(), executionTimeMs);
+        log.info("Reconciliation complete: {} images scanned, {} decoded, {} matched in Excel in {}ms",
+                response.getTotalImages(), decodedImagesCount, excelResult.getMatchedRowsCount(), executionTimeMs);
 
         return response;
     }
